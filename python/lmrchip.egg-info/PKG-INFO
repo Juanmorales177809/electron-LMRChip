@@ -1,0 +1,73 @@
+Metadata-Version: 2.2
+Name: lmrchip
+Version: 0.1.0
+Summary: Hardware control and scientific processing for the LMRChip system
+Requires-Python: <3.11,>=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy==2.2.6
+Requires-Dist: pyserial==3.5
+Requires-Dist: scipy==1.15.3
+Requires-Dist: seabreeze==2.11.0
+Provides-Extra: legacy-gui
+Requires-Dist: matplotlib==3.10.9; extra == "legacy-gui"
+
+# LMRChip Desktop
+
+Aplicación de escritorio para integrar y automatizar el control del
+dispositivo experimental **LMRChip**, orientada a investigadores que
+trabajan con sensores *Lossy Mode Resonance (LMR)*.
+
+## Objetivo
+
+Desarrollar la aplicación unificada, reemplazando el uso separado de las
+herramientas de control por una única interfaz de usuario basada en
+**Electron**.
+
+## Funcionalidades
+
+-   Control de los movimientos mecatrónicos y posicionamiento mediante
+    GRBL.
+-   Control y monitoreo de temperatura de la celda microfluídica.
+-   Gestión del autosampler y circulación de muestras.
+-   Adquisición de espectros del sensor LMR.
+-   Ejecución y seguimiento de secuencias experimentales desde una única
+    interfaz.
+
+## Arquitectura inicial
+
+La aplicación será local y estará basada en **Electron**, comunicándose
+con los distintos controladores e instrumentos conectados al computador
+mediante el hub USB del dispositivo.
+
+> El alcance inicial es integrar el hardware y las funcionalidades
+> existentes; los protocolos, drivers y APIs específicos de cada
+> instrumento se documentarán durante el desarrollo.
+
+## Backend Python
+
+La lógica de control y procesamiento está organizada en el paquete
+`lmrchip`, ubicado en `python/lmrchip`:
+
+- `lmrchip.microfluidics`: comunicación GRBL y movimientos de la máquina.
+- `lmrchip.spectroscopy`: adquisición de espectros y seguimiento LMR.
+- `lmrchip.temperature`: control del equipo PR-59.
+
+El proyecto utiliza Python 3.10.18. Para instalar el backend en un entorno
+virtual de Python 3.10:
+
+```powershell
+python -m pip install -e .
+```
+
+Las interfaces Tkinter anteriores se conservan temporalmente como herramientas
+de diagnóstico. Sus dependencias gráficas opcionales se instalan con:
+
+```powershell
+python -m pip install -e ".[legacy-gui]"
+```
+
+Las pruebas no requieren hardware conectado:
+
+```powershell
+python -m unittest discover -s tests -v
+```
