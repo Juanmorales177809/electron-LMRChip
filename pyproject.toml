@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=75,<76"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lmrchip"
+version = "0.1.0"
+description = "Hardware control and scientific processing for the LMRChip system"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "numpy==2.2.6",
+    "pyserial==3.5",
+    "scipy==1.15.3",
+    "seabreeze==2.11.0",
+]
+
+[project.optional-dependencies]
+legacy-gui = [
+    "matplotlib==3.10.9",
+]
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["lmrchip*"]
