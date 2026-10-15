@@ -5,8 +5,4 @@
 __pycache__/
 *.py[cod]
 .venv*/
-node_modules/
-dist/
-dist-electron/
-build/
-release/
+
