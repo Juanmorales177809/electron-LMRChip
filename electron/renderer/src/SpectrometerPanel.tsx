@@ -1,119 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
+import { acquisitionCommands, filterSpectrum, markerX, peakStatus, trackingTimestamp, validateSpectrometerSettings, validateViewRange, type ViewRange } from "./opticsIntegration";
 
-const defaults: SpectrometerSettings = {
-  integration_time: 100, scans_to_average: 10, delay: 0.05, boxcar_width: 2,
-  search_min_nm: 650, search_max_nm: 750, fit_half_window_nm: 1.5,
-  smoothing_window: 9, tracking_half_window_nm: 15, tracking_interval_ms: 250,
-};
-const disconnected: SpectrometerSnapshot = {
-  connection_state: "disconnected", device_id: null, simulation: false, tracking: false,
-  has_background: false, has_reference: false, has_sample: false, settings: defaults,
-};
+const defaults: SpectrometerSettings = { integration_time: 100, scans_to_average: 10, delay: 0.05, boxcar_width: 2, search_min_nm: 650, search_max_nm: 750, fit_half_window_nm: 1.5, smoothing_window: 9, tracking_half_window_nm: 15, tracking_interval_ms: 250 };
+const disconnected: SpectrometerSnapshot = { connection_state: "disconnected", device_id: null, simulation: false, tracking: false, has_background: false, has_reference: false, has_sample: false, settings: defaults };
 
 export function SpectrometerPanel({ backendRunning }: { backendRunning: boolean }) {
-  const [state, setState] = useState(disconnected);
-  const [devices, setDevices] = useState<SpectrometerDevice[]>([]);
-  const [deviceId, setDeviceId] = useState("");
-  const [settings, setSettings] = useState(defaults);
-  const [spectrum, setSpectrum] = useState<SpectrumPayload | null>(null);
-  const [history, setHistory] = useState<Array<{ time: number; wavelength: number | null }>>([]);
-  const [saturation, setSaturation] = useState<string>("No diagnostics");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => window.lmrchip.backend.onEvent((message) => {
-    if (message.event === "spectrometer.state") setState(message.data as SpectrometerSnapshot);
-    if (message.event === "spectrometer.spectrum" || message.event === "spectrometer.transmission") setSpectrum(message.data as SpectrumPayload);
-    if (message.event === "spectrometer.tracking") {
-      const data = message.data as SpectrumPayload;
-      setSpectrum(data);
-      const now = Date.now();
-      setHistory((current) => [...current.filter((point) => now - point.time <= 600_000), { time: now, wavelength: data.result?.wavelength ?? null }].slice(-2400));
-    }
-    if (message.event === "spectrometer.saturation") {
-      const data = message.data as { max_counts: number; is_saturated: boolean; is_near_saturation: boolean };
-      setSaturation(`${data.max_counts.toFixed(0)} counts · ${data.is_saturated ? "Saturated" : data.is_near_saturation ? "Near saturation" : "OK"}`);
-    }
-    if (message.event === "spectrometer.error") {
-      const data = message.data as { code: string; message: string };
-      setError(`${data.code}: ${data.message}`);
-    }
-  }), []);
-
-  useEffect(() => {
-    if (backendRunning) { void refreshDevices(); void refreshStatus(); }
-    else { setState(disconnected); setDevices([]); }
-  }, [backendRunning]);
-
-  async function execute(action: () => Promise<unknown>) {
-    setBusy(true); setError(null);
-    try {
-      const result = await action();
-      if (result && typeof result === "object" && "connection_state" in result) setState(result as SpectrometerSnapshot);
-      if (result && typeof result === "object" && "wavelengths" in result) setSpectrum(result as SpectrumPayload);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
-    finally { setBusy(false); }
-  }
-  async function refreshDevices() {
-    try {
-      const result = await window.lmrchip.backend.request("spectrometer.list_devices") as { devices: SpectrometerDevice[] };
-      setDevices(result.devices); setDeviceId((current) => current || result.devices[0]?.id || "");
-    } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
-  }
-  async function refreshStatus() {
-    try { const result = await window.lmrchip.backend.request("spectrometer.status") as SpectrometerSnapshot; setState(result); setSettings(result.settings); }
-    catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); }
-  }
-  const connected = state.connection_state === "connected";
-  const locked = busy || state.tracking;
-  const update = (key: keyof SpectrometerSettings, value: number) => setSettings((current) => ({ ...current, [key]: value }));
-
-  return <section className="temperature-section">
-    <div className="section-heading"><div><p className="eyebrow">Module 2</p><h2>Spectrometer and LMR tracking</h2></div><span className={`state state-${state.connection_state}`}>{state.connection_state}</span></div>
-    <div className="spectrometer-grid">
-      <article className="card controls-card">
-        <label>Device</label><div className="inline-control"><select value={deviceId} disabled={!backendRunning || connected || busy} onChange={(e) => setDeviceId(e.target.value)}>{devices.length === 0 && <option value="">No devices</option>}{devices.map((d) => <option key={d.id} value={d.id}>{d.model} · {d.serial}</option>)}</select><button disabled={!backendRunning || connected || busy} onClick={() => void refreshDevices()}>Refresh</button></div>
-        <div className="actions"><button disabled={!deviceId || connected || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.connect", { device_id: deviceId }))}>Connect</button><button className="secondary" disabled={!connected || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.disconnect"))}>Disconnect</button></div>
-        <div className="settings-grid">
-          <NumberField label="Integration (ms)" value={settings.integration_time} set={(v) => update("integration_time", v)} />
-          <NumberField label="Averages" value={settings.scans_to_average} set={(v) => update("scans_to_average", v)} />
-          <NumberField label="Delay (s)" value={settings.delay} step={0.01} set={(v) => update("delay", v)} />
-          <NumberField label="Boxcar" value={settings.boxcar_width} set={(v) => update("boxcar_width", v)} />
-          <NumberField label="Search minimum" value={settings.search_min_nm} set={(v) => update("search_min_nm", v)} />
-          <NumberField label="Search maximum" value={settings.search_max_nm} set={(v) => update("search_max_nm", v)} />
-        </div>
-        <button disabled={!connected || locked} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.configure", { ...settings }))}>Apply configuration</button>
-        {state.simulation && <p className="simulation">Simulation mode active</p>}{error && <p className="error">{error}</p>}
-      </article>
-      <article className="card">
-        <h2>Calibration and acquisition</h2>
-        <div className="calibration-status"><span className={state.has_background ? "done" : ""}>Background</span><span className={state.has_reference ? "done" : ""}>Reference</span><span className={state.has_sample ? "done" : ""}>Sample</span></div>
-        <div className="actions vertical-actions"><button disabled={!connected || locked} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.capture_background"))}>Capture background</button><button disabled={!connected || locked} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.capture_reference"))}>Capture reference</button><button disabled={!connected || locked} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.capture_sample"))}>Capture sample</button><button disabled={!state.has_sample || locked} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.calculate_transmission"))}>Calculate transmission</button></div>
-        <p className="diagnostic">{saturation}</p>
-        <div className="actions"><button disabled={!state.has_background || !state.has_reference || state.tracking || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.start_tracking"))}>Start tracking</button><button className="secondary" disabled={!state.tracking || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.stop_tracking"))}>Stop tracking</button></div>
-      </article>
-      <article className="card chart-card"><h2>{spectrum?.result ? "Transmission and resonance" : "Spectrum"}</h2><SpectrumChart data={spectrum} /></article>
-      <article className="card chart-card"><div className="card-heading"><h2>LMR position · last 10 minutes</h2><button className="text-button" onClick={() => setHistory([])}>Clear</button></div><ResonanceChart points={history} /></article>
-    </div>
-  </section>;
+  const [state, setState] = useState(disconnected); const [devices, setDevices] = useState<SpectrometerDevice[]>([]); const [deviceId, setDeviceId] = useState(""); const [settings, setSettings] = useState(defaults); const [viewRange, setViewRange] = useState<ViewRange>({ min: defaults.search_min_nm, max: defaults.search_max_nm }); const [spectrum, setSpectrum] = useState<SpectrumPayload | null>(null); const [history, setHistory] = useState<Array<{ time: number; wavelength: number | null }>>([]); const [saturation, setSaturation] = useState("No diagnostics"); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+  useEffect(() => window.lmrchip.backend.onEvent((event) => { if (event.event === "spectrometer.state") setState(event.data as SpectrometerSnapshot); if (["spectrometer.spectrum", "spectrometer.transmission"].includes(event.event)) setSpectrum(event.data as SpectrumPayload); if (event.event === "spectrometer.tracking") { const data = event.data as SpectrumPayload; setSpectrum(data); setHistory((current) => [...current.slice(-2399), { time: trackingTimestamp(data.timestamp, Date.now()), wavelength: data.result?.wavelength ?? null }]); } if (event.event === "spectrometer.saturation") { const data = event.data as { max_counts: number; is_saturated: boolean; is_near_saturation: boolean }; setSaturation(`${data.max_counts.toFixed(0)} counts · ${data.is_saturated ? "Saturated" : data.is_near_saturation ? "Near saturation" : "OK"}`); } if (event.event === "spectrometer.error") { const data = event.data as { code: string; message: string }; setError(`${data.code}: ${data.message}`); } }), []);
+  useEffect(() => { if (backendRunning) { void refreshDevices(); void refreshStatus(); } else { setState(disconnected); setDevices([]); setSpectrum(null); setHistory([]); } }, [backendRunning]);
+  async function execute(action: () => Promise<unknown>) { setBusy(true); setError(null); try { const result = await action(); if (result && typeof result === "object" && "connection_state" in result) { const next = result as SpectrometerSnapshot; setState(next); setSettings(next.settings); } if (result && typeof result === "object" && "wavelengths" in result) setSpectrum(result as SpectrumPayload); } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); } finally { setBusy(false); } }
+  async function acquireSpectrum() { const [capture, calculate] = acquisitionCommands(); await window.lmrchip.backend.request(capture); return window.lmrchip.backend.request(calculate); }
+  async function refreshDevices() { try { const result = await window.lmrchip.backend.request("spectrometer.list_devices") as { devices: SpectrometerDevice[] }; setDevices(result.devices); setDeviceId((current) => current || result.devices[0]?.id || ""); } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); } }
+  async function refreshStatus() { try { const result = await window.lmrchip.backend.request("spectrometer.status") as SpectrometerSnapshot; setState(result); setSettings(result.settings); setViewRange((current) => current.min === defaults.search_min_nm && current.max === defaults.search_max_nm ? { min: result.settings.search_min_nm, max: result.settings.search_max_nm } : current); } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); } }
+  const connected = state.connection_state === "connected"; const locked = busy || state.tracking; const update = (key: keyof SpectrometerSettings, value: number) => setSettings((current) => ({ ...current, [key]: value })); const viewError = validateViewRange(viewRange.min, viewRange.max); const settingsError = validateSpectrometerSettings(settings); const result = spectrum?.result; const resultState = peakStatus(result);
+  return <section className="optics-reference"><article className="optics-card optics-calibration"><h2>Transmission calibration</h2><div className="optics-calib-line"><span className="optics-step-dot">1</span><button className="optics-calib-btn" disabled={!connected || locked} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.capture_background"))}>▣ &nbsp;Measure background {state.has_background && <b>✓</b>}</button><span className="optics-arrow">→</span><span className="optics-step-dot">2</span><button className="optics-calib-btn" disabled={!connected || locked} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.capture_reference"))}>▣ &nbsp;Measure reference {state.has_reference && <b>✓</b>}</button><span className="optics-calib-state">{state.has_background && state.has_reference ? "✓ Calibration complete" : "Calibration incomplete"}</span></div></article><div className="optics-layout"><div className="optics-left">
+    <article className="optics-card optics-spectrum-card"><div className="optics-title-inline"><h2>Real-time spectrum</h2><span className="optics-tag">{state.tracking ? "TRACKING" : spectrum ? "LIVE PREVIEW" : "NO DATA"}</span></div><SpectrumChart data={spectrum} range={viewRange} /></article>
+    <article className="optics-card optics-track-card"><h2>LMR tracking</h2><div className="optics-track-grid"><div className="optics-subpanel"><h3>Search range</h3><div className="optics-fields-2"><Field label="Initial LMR min (nm)" value={settings.search_min_nm} set={(v) => update("search_min_nm", v)} /><Field label="Initial LMR max (nm)" value={settings.search_max_nm} set={(v) => update("search_max_nm", v)} /></div></div><div className="optics-subpanel"><h3>Tracking filter</h3><div className="optics-fields-2"><Field label="Smoothing points" value={settings.smoothing_window} set={(v) => update("smoothing_window", v)} /><Field label="Local search (nm)" value={settings.tracking_half_window_nm} set={(v) => update("tracking_half_window_nm", v)} /></div></div><div className="optics-subpanel"><h3>Tracking controls</h3><div className="optics-track-buttons"><button disabled={!state.has_background || !state.has_reference || state.tracking || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.start_tracking"))}>◉ Start tracking</button><button disabled={!state.tracking || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.stop_tracking"))}>◉ Stop tracking</button></div></div></div></article>
+    <article className="optics-card optics-resonance-card"><div className="optics-title-inline"><h2>Resonance wavelength over time</h2><span className="optics-tag">{state.tracking ? "TRACKING" : "NOT TRACKING"}</span></div><ResonanceChart points={history} /></article>
+  </div><div className="optics-right">
+    <article className="optics-card optics-parameters"><h2>Spectrometer parameters</h2><Field label="Integration (ms)" value={settings.integration_time} set={(v) => update("integration_time", v)} /><Field label="Scans average" value={settings.scans_to_average} set={(v) => update("scans_to_average", v)} /><Field label="Delay (s)" value={settings.delay} step={.01} set={(v) => update("delay", v)} /><Field label="Boxcar width" value={settings.boxcar_width} set={(v) => update("boxcar_width", v)} /><div className="optics-device-row"><select value={deviceId} disabled={!backendRunning || connected || busy} onChange={(e) => setDeviceId(e.target.value)}><option value="">No device</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.model} · {device.serial}</option>)}</select><button onClick={() => void refreshDevices()}>Refresh</button></div><div className="optics-device-actions"><button disabled={!deviceId || connected || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.connect", { device_id: deviceId }))}>Connect</button><button disabled={!connected || busy} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.disconnect"))}>Disconnect</button></div><button className="optics-apply" disabled={!connected || locked || Boolean(settingsError)} onClick={() => void execute(() => window.lmrchip.backend.request("spectrometer.configure", { ...settings }))}>Apply parameters</button>{settingsError && <p className="error">{settingsError}</p>}</article>
+    <article className="optics-card optics-view-card"><h2>View</h2><div className="optics-view-grid"><Field label="Minimum wavelength (nm)" value={viewRange.min} set={(v) => setViewRange((current) => ({ ...current, min: v }))} /><Field label="Maximum wavelength (nm)" value={viewRange.max} set={(v) => setViewRange((current) => ({ ...current, max: v }))} /></div><p>View limits affect only the displayed spectrum.</p>{viewError && <p className="error">{viewError}</p>}</article>
+    <article className="optics-card optics-peak"><h2>Main peak information</h2><div className="optics-readings"><div><small>Wavelength (nm)</small><strong>{resultState === "Available" ? `${result!.wavelength!.toFixed(3)} nm` : "—"}</strong></div><div><small>Transmission</small><strong>{resultState === "Available" ? result!.transmission!.toFixed(3) : "—"}</strong></div></div><p className="optics-diagnostic">{resultState}{resultState === "Invalid result" && result?.reason ? ` · ${result.reason}` : ` · ${saturation}`}</p></article>
+    <article className="optics-card optics-acquisition"><h2>Spectrum acquisition</h2><div className="optics-stack"><button className="optics-primary" disabled={!connected || locked || Boolean(viewError)} onClick={() => void execute(acquireSpectrum)}>▶ &nbsp;Acquire spectrum</button></div>{state.simulation && <p className="optics-diagnostic">Simulation mode active</p>}{error && <p className="error">{error}</p>}</article>
+  </div></div></section>;
 }
 
-function NumberField({ label, value, set, step = 1 }: { label: string; value: number; set: (value: number) => void; step?: number }) { return <label>{label}<input type="number" value={value} step={step} onChange={(e) => set(Number(e.target.value))} /></label>; }
-
-function SpectrumChart({ data }: { data: SpectrumPayload | null }) {
-  const points = useMemo(() => chartPoints(data?.wavelengths ?? [], data?.values ?? []), [data]);
-  if (!points) return <div className="empty-chart">No spectrum.</div>;
-  return <div><svg viewBox="0 0 1000 260"><polyline points={points} className="temperature-line" /></svg>{data?.result && <p className="diagnostic">LMR: {data.result.valid && data.result.wavelength !== null ? `${data.result.wavelength.toFixed(3)} nm · R² ${data.result.r_squared?.toFixed(4)}` : data.result.reason}</p>}</div>;
-}
-function ResonanceChart({ points }: { points: Array<{ time: number; wavelength: number | null }> }) {
-  const finite = points.filter((p): p is { time: number; wavelength: number } => p.wavelength !== null);
-  const geometry = useMemo(() => chartPoints(finite.map((p) => p.time), finite.map((p) => p.wavelength)), [points]);
-  return geometry ? <svg viewBox="0 0 1000 260"><polyline points={geometry} className="temperature-line" /></svg> : <div className="empty-chart">Waiting for a valid resonance...</div>;
-}
-function chartPoints(xs: Array<number | null>, ys: Array<number | null>) {
-  const pairs = xs.map((x, i) => [x, ys[i]] as const).filter((p): p is readonly [number, number] => p[0] !== null && p[1] !== null);
-  if (pairs.length < 2) return null;
-  const minX = Math.min(...pairs.map((p) => p[0])), maxX = Math.max(...pairs.map((p) => p[0]));
-  const minY = Math.min(...pairs.map((p) => p[1])), maxY = Math.max(...pairs.map((p) => p[1]));
-  return pairs.map(([x, y]) => `${(((x - minX) / Math.max(maxX - minX, 1)) * 1000).toFixed(1)},${(240 - ((y - minY) / Math.max(maxY - minY, 1)) * 220).toFixed(1)}`).join(" ");
-}
+function Field({ label, value, set, step = 1 }: { label: string; value: number; set: (value: number) => void; step?: number }) { return <label className="optics-field"><span>{label}</span><input type="number" value={value} step={step} onChange={(event) => set(Number(event.target.value))} /></label>; }
+function SpectrumChart({ data, range }: { data: SpectrumPayload | null; range: ViewRange }) { const points = useMemo(() => chartPoints(data?.wavelengths ?? [], data?.values ?? [], range), [data, range]); return <div className="optics-chart-wrap"><svg viewBox="0 0 1000 300"><g className="optics-grid-lines"><line x1="55" y1="20" x2="55" y2="260" /><line x1="55" y1="260" x2="980" y2="260" /><line x1="55" y1="80" x2="980" y2="80" /><line x1="55" y1="140" x2="980" y2="140" /><line x1="55" y1="200" x2="980" y2="200" /></g>{points && <polyline points={points} className="optics-spectrum-line" />}{data?.result?.wavelength !== null && data?.result?.wavelength !== undefined && <line x1={markerX(data.result.wavelength, range)} x2={markerX(data.result.wavelength, range)} y1="20" y2="260" className="optics-marker" />}</svg>{!points && <p className="optics-empty">No spectrum data.</p>}{data?.result && <p className="optics-diagnostic">LMR: {data.result.valid && data.result.wavelength !== null ? `${data.result.wavelength.toFixed(3)} nm` : data.result.reason}</p>}</div>; }
+function ResonanceChart({ points }: { points: Array<{ time: number; wavelength: number | null }> }) { const geometry = useMemo(() => chartPoints(points.map((point) => point.time), points.map((point) => point.wavelength), { min: Math.min(...points.map((point) => point.time), 0), max: Math.max(...points.map((point) => point.time), 1) }), [points]); return <div className="optics-chart-wrap resonance-wrap"><svg viewBox="0 0 1000 210"><g className="optics-grid-lines"><line x1="55" y1="15" x2="55" y2="175" /><line x1="55" y1="175" x2="980" y2="175" /><line x1="55" y1="95" x2="980" y2="95" /></g>{geometry && <polyline points={geometry} className="optics-resonance-line" />}</svg>{!geometry && <p className="optics-empty">Start tracking to display resonance data</p>}</div>; }
+function chartPoints(xs: Array<number | null>, ys: Array<number | null>, range: ViewRange) { const pairs = filterSpectrum(xs, ys, range); if (pairs.length < 2) return null; const minY = Math.min(...pairs.map((pair) => pair[1])); const maxY = Math.max(...pairs.map((pair) => pair[1])); return pairs.map(([x, y]) => `${markerX(x, range)},${260 - ((y - minY) / Math.max(maxY - minY, 1)) * 220}`).join(" "); }

@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 import unittest
+import numpy as np
 from pathlib import Path
 from unittest.mock import patch
 
@@ -68,6 +69,43 @@ class SpectrometerManagerTests(unittest.TestCase):
         with self.assertRaises(CommandError) as caught:
             self.manager.start_tracking()
 
+        self.assertEqual(caught.exception.code, "CALIBRATION_REQUIRED")
+
+    def test_one_shot_resonance_returns_transmission_and_timestamp_without_tracking(self):
+        self.connect_fast()
+        self.manager.capture("background")
+        self.manager.capture("reference")
+        self.manager.capture("sample")
+
+        payload = self.manager.detect_resonance_once()
+
+        self.assertIsInstance(payload["timestamp"], float)
+        self.assertEqual(len(payload["wavelengths"]), 1201)
+        self.assertEqual(len(payload["values"]), 1201)
+        self.assertIn("result", payload)
+        self.assertTrue(payload["result"]["valid"], payload["result"]["reason"])
+        self.assertFalse(self.manager.snapshot()["tracking"])
+        self.assertFalse(any(event == "spectrometer.tracking" for event, _ in self.events))
+
+    def test_one_shot_invalid_resonance_has_no_numeric_result(self):
+        self.connect_fast()
+        self.manager.capture("background")
+        self.manager.capture("reference")
+        self.manager.capture("sample")
+        self.manager._optical.calculate_transmission = lambda: np.ones(1201)
+        self.manager._optical.transmission_diagnostics = {}
+
+        payload = self.manager.detect_resonance_once()
+
+        self.assertFalse(payload["result"]["valid"])
+        self.assertIsNone(payload["result"]["wavelength"])
+        self.assertIsNone(payload["result"]["transmission"])
+        self.assertTrue(payload["result"]["reason"])
+
+    def test_one_shot_requires_calibration(self):
+        self.connect_fast()
+        with self.assertRaises(CommandError) as caught:
+            self.manager.detect_resonance_once()
         self.assertEqual(caught.exception.code, "CALIBRATION_REQUIRED")
 
     def test_invalid_configuration_does_not_replace_previous_settings(self):

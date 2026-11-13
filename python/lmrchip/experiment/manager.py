@@ -15,6 +15,7 @@ from typing import Any, Callable
 import numpy as np
 
 from lmrchip.errors import CommandError
+from lmrchip.protocols import ProtocolStore, validate_protocol
 
 
 EventSink = Callable[[str, dict[str, Any]], None]
@@ -32,11 +33,12 @@ DEFAULT_CONFIG = {
 class ExperimentManager:
     """Run one experiment at a time without bypassing module safety rules."""
 
-    def __init__(self, temperature, spectrometer, microfluidics, event_sink: EventSink | None = None) -> None:
+    def __init__(self, temperature, spectrometer, microfluidics, event_sink: EventSink | None = None, protocol_store: ProtocolStore | None = None) -> None:
         self.temperature = temperature
         self.spectrometer = spectrometer
         self.microfluidics = microfluidics
         self._event_sink = event_sink or (lambda _event, _data: None)
+        self._protocol_store = protocol_store or ProtocolStore()
         self._lock = threading.RLock()
         self._pause_requested = threading.Event()
         self._resume_requested = threading.Event()
@@ -51,11 +53,17 @@ class ExperimentManager:
         self._error: dict[str, str] | None = None
         self._started_at: str | None = None
         self._finished_at: str | None = None
+        self._protocol: dict[str, Any] | None = None
+        self._current_step: int | None = None
+        self._completed_steps: list[int] = []
         self._spectrum_index = 0
         self._file_lock = threading.Lock()
 
     def validate(self, payload: dict[str, Any]) -> dict[str, Any]:
-        config, root = self._validated_config(payload)
+        protocol = self._load_protocol(payload)
+        if protocol is not None:
+            self._validate_protocol_execution(protocol)
+        config, root = self._validated_config(payload, protocol)
         self._validate_prerequisites(config)
         return {"valid": True, "config": config, "results_root": str(root)}
 
@@ -63,7 +71,10 @@ class ExperimentManager:
         with self._lock:
             if self._worker is not None and self._worker.is_alive():
                 raise CommandError("BUSY", "An experiment is already active.")
-        config, root = self._validated_config(payload)
+        protocol = self._load_protocol(payload)
+        if protocol is not None:
+            self._validate_protocol_execution(protocol)
+        config, root = self._validated_config(payload, protocol)
         self._validate_prerequisites(config)
         result_dir = self._create_result_dir(root)
         with self._lock:
@@ -76,6 +87,9 @@ class ExperimentManager:
             self._error = None
             self._started_at = _utc_now()
             self._finished_at = None
+            self._protocol = protocol
+            self._current_step = None
+            self._completed_steps = []
             self._spectrum_index = 0
             self._pause_requested.clear()
             self._resume_requested.clear()
@@ -128,6 +142,13 @@ class ExperimentManager:
                 "error": dict(self._error) if self._error else None,
                 "started_at": self._started_at,
                 "finished_at": self._finished_at,
+                "protocol_id": self._protocol["id"] if self._protocol else None,
+                "protocol_name": self._protocol["name"] if self._protocol else None,
+                "protocol": self._protocol,
+                "current_step": self._current_step,
+                "completed_steps": list(self._completed_steps),
+                "total_steps": len(self._protocol["steps"]) if self._protocol else 0,
+                "progress_percent": self._progress_percent(),
             }
 
     def handle_module_event(self, event: str, data: dict[str, Any]) -> None:
@@ -163,7 +184,11 @@ class ExperimentManager:
     def _run(self) -> None:
         try:
             assert self._config is not None
-            for tube in self._config["tubes"]:
+            sequence = self._protocol_sequence()
+            for sequence_index, tube in enumerate(sequence):
+                with self._lock:
+                    self._current_step = sequence_index if self._protocol else None
+                self._emit_state()
                 if self._cancel_requested.is_set():
                     break
                 completed = self._run_tube(tube)
@@ -180,7 +205,10 @@ class ExperimentManager:
                             completed = self._run_tube(tube)
                 if completed:
                     with self._lock:
-                        self._completed_tubes.append(tube)
+                        if tube not in self._completed_tubes:
+                            self._completed_tubes.append(tube)
+                        if self._protocol:
+                            self._completed_steps.append(sequence_index)
                     self._write_metadata()
                     self._emit_progress()
             if self._cancel_requested.is_set():
@@ -217,6 +245,45 @@ class ExperimentManager:
         self._safe_stop_tracking()
         self._safe_raise_needle()
         return not self._interruption_requested()
+
+    def _protocol_sequence(self) -> list[int]:
+        if not self._protocol:
+            return list(self._config["tubes"]) if self._config else []
+        return [step["tube"] for step in self._protocol["steps"] if step.get("sample_id") is not None]
+
+    def _load_protocol(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        if "protocol_id" not in payload and "protocol" not in payload:
+            return None
+        protocol = self._protocol_store.load(payload["protocol_id"]) if "protocol_id" in payload else validate_protocol(payload.get("protocol"))
+        sample_tubes = {position["sample_id"]: index for index, position in enumerate(protocol["positions"], start=1) if position["sample_id"] is not None}
+        for step in protocol["steps"]:
+            if step["sample_id"] is not None:
+                step["tube"] = sample_tubes.get(step["sample_id"])
+        return protocol
+
+    @staticmethod
+    def _validate_protocol_execution(protocol: dict[str, Any]) -> None:
+        configured = [step for step in protocol["steps"] if step["sample_id"] is not None]
+        if not configured:
+            raise CommandError("INVALID_PROTOCOL", "Protocol must contain at least one configured step.")
+        positions: dict[str, int] = {}
+        for index, position in enumerate(protocol["positions"], start=1):
+            sample_id = position["sample_id"]
+            if sample_id is not None and sample_id not in positions:
+                positions[sample_id] = index
+        for step in configured:
+            if step["sample_id"] not in positions:
+                raise CommandError("INVALID_PROTOCOL", "Every configured step must resolve to a carousel position.")
+            if step["flow_rate"] is not None:
+                raise CommandError(
+                    "FLOW_CONTROL_UNAVAILABLE",
+                    "This installation has no connected flow controller; protocol steps with flow_rate cannot run yet.",
+                )
+
+    def _progress_percent(self) -> int:
+        total = len(self._protocol["steps"]) if self._protocol else len(self._config["tubes"]) if self._config else 0
+        completed = len(self._completed_steps) if self._protocol else len(self._completed_tubes)
+        return round(completed / total * 100) if total else 0
 
     def _wait_for_stable_temperature(self) -> bool:
         assert self._config is not None
@@ -303,7 +370,7 @@ class ExperimentManager:
         if problems:
             raise CommandError("PREREQUISITES_NOT_MET", "; ".join(problems) + ".")
 
-    def _validated_config(self, payload: dict[str, Any]) -> tuple[dict[str, Any], Path]:
+    def _validated_config(self, payload: dict[str, Any], protocol: dict[str, Any] | None = None) -> tuple[dict[str, Any], Path]:
         root_value = payload.get("results_root")
         if not isinstance(root_value, str) or not root_value.strip():
             raise CommandError("INVALID_RESULTS_PATH", "A results folder must be selected.")
@@ -312,6 +379,9 @@ class ExperimentManager:
             raise CommandError("INVALID_RESULTS_PATH", "Results folder must be an existing absolute directory.")
         config = dict(DEFAULT_CONFIG)
         config.update({key: payload[key] for key in DEFAULT_CONFIG if key in payload})
+        if protocol is not None:
+            tubes = [step["tube"] for step in protocol["steps"] if step.get("sample_id") is not None and step.get("tube") is not None]
+            config["tubes"] = tubes or config["tubes"]
         tubes = config["tubes"]
         if not isinstance(tubes, list) or not tubes or any(isinstance(t, bool) or not isinstance(t, int) or not 1 <= t <= 12 for t in tubes) or len(set(tubes)) != len(tubes):
             raise CommandError("INVALID_CONFIGURATION", "Tubes must be a non-empty, unique list containing values from 1 to 12.")

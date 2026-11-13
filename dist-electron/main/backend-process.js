@@ -59,6 +59,7 @@ class BackendProcess extends node_events_1.EventEmitter {
                 ...process.env,
                 PYTHONPATH: pythonPath,
                 ...(this.logDirectory ? { LMRCHIP_LOG_DIR: this.logDirectory } : {}),
+                ...(this.logDirectory ? { LMRCHIP_PROTOCOL_DIR: node_path_1.default.join(this.logDirectory, "protocols") } : {}),
             },
             stdio: ["pipe", "pipe", "pipe"],
             windowsHide: true,

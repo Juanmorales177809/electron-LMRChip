@@ -156,6 +156,33 @@ class SpectrometerManager:
         self._emit("spectrometer.transmission", payload)
         return payload
 
+    def detect_resonance_once(self) -> dict[str, Any]:
+        """Calculate one transmission spectrum and detect its LMR resonance."""
+        optical = self._require_optical()
+        self._require_calibration(optical, require_sample=True)
+        if self._tracking:
+            raise CommandError("BUSY", "Stop tracking before one-shot resonance detection.")
+        try:
+            with self._lock:
+                transmission = optical.calculate_transmission()
+                tracker = ResonanceTracker(
+                    self._settings["search_min_nm"], self._settings["search_max_nm"],
+                    fit_half_window_nm=self._settings["fit_half_window_nm"],
+                    smoothing_window=self._settings["smoothing_window"],
+                    tracking_half_window_nm=self._settings["tracking_half_window_nm"],
+                )
+                result = tracker.update(optical.wavelengths, transmission)
+        except Exception as error:
+            raise CommandError("ACQUISITION_ERROR", f"Could not detect resonance: {error}") from error
+        result_data = asdict(result)
+        result_data["fit_wavelengths"] = _array_values(result.fit_wavelengths)
+        result_data["fit_transmission"] = _array_values(result.fit_transmission)
+        payload = self._transmission_payload(transmission)
+        payload["result"] = _json_values(result_data)
+        payload["timestamp"] = time.time()
+        self._emit("spectrometer.transmission", payload)
+        return payload
+
     def start_tracking(self) -> dict[str, Any]:
         optical = self._require_optical()
         self._require_calibration(optical)

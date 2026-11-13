@@ -85,12 +85,21 @@ interface ExperimentConfig {
   tubes: number[]; setpoint: number; temperature_tolerance: number;
   stable_seconds: number; stabilization_timeout_seconds: number; tracking_seconds: number;
 }
+interface ProtocolSample { id: string; name: string; concentration: string; notes: string; }
+interface ProtocolStep { sample_id: string | null; flow_rate: number | null; duration_seconds: number | null; tube?: number | null; }
+interface ProtocolSnapshot {
+  version: number; id: string; name: string; samples: ProtocolSample[];
+  positions: Array<{ sample_id: string | null; color: string }>;
+  steps: ProtocolStep[];
+}
 interface ExperimentSnapshot {
   state: "idle" | "running" | "paused" | "completed" | "cancelled" | "failed";
   phase: string; config: ExperimentConfig | null; result_directory: string | null;
   current_tube: number | null; completed_tubes: number[]; total_tubes: number;
   pause_requested: boolean; error: { code: string; message: string } | null;
   started_at: string | null; finished_at: string | null;
+  protocol_id?: string | null; protocol_name?: string | null; protocol?: ProtocolSnapshot | null;
+  current_step?: number | null; completed_steps?: number[]; total_steps?: number; progress_percent?: number;
 }
 
   interface Window {

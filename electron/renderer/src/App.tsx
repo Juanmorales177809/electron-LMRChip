@@ -1,100 +1,36 @@
-import { useEffect, useState } from "react";
-
+import { useEffect, useMemo, useState } from "react";
 import { TemperaturePanel } from "./TemperaturePanel";
 import { SpectrometerPanel } from "./SpectrometerPanel";
 import { MicrofluidicsPanel } from "./MicrofluidicsPanel";
-import { ExperimentPanel } from "./ExperimentPanel";
+import { homeProgress, readProtocolList } from "./homeIntegration";
 
-
-const initialState: BackendSnapshot = { state: "stopped", pid: null, lastError: null };
+type View = "home" | "microfluidics" | "temperature" | "optics";
+const initialBackend: BackendSnapshot = { state: "stopped", pid: null, lastError: null };
+const initialExperiment: ExperimentSnapshot = { state: "idle", phase: "idle", config: null, result_directory: null, current_tube: null, completed_tubes: [], total_tubes: 0, pause_requested: false, error: null, started_at: null, finished_at: null };
 
 export function App() {
-  const [backend, setBackend] = useState<BackendSnapshot>(initialState);
-  const [status, setStatus] = useState<BackendStatus["service"]>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [diagnostics, setDiagnostics] = useState<ResourceDiagnostics | null>(null);
-
-  useEffect(() => {
-    const removeState = window.lmrchip.backend.onStateChange(setBackend);
-    const removeLog = window.lmrchip.backend.onLog((message) => {
-      setLogs((current) => [...current.slice(-99), message]);
-    });
-    void refreshStatus();
-    void window.lmrchip.backend.diagnostics().then(setDiagnostics).catch(() => setDiagnostics(null));
-    return () => {
-      removeState();
-      removeLog();
-    };
-  }, []);
-
-  async function run(action: () => Promise<unknown>) {
-    setBusy(true);
-    try {
-      await action();
-      await refreshStatus();
-    } catch (error) {
-      setLogs((current) => [...current, error instanceof Error ? error.message : String(error)]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function refreshStatus() {
-    try {
-      const result = await window.lmrchip.backend.status();
-      setBackend(result.process);
-      setStatus(result.service);
-    } catch (error) {
-      setLogs((current) => [...current, error instanceof Error ? error.message : String(error)]);
-    }
-  }
-
-  const isRunning = backend.state === "running";
-
-  return (
-    <main className="shell">
-      <header>
-        <div>
-          <p className="eyebrow">Experimental system</p>
-          <h1>LMRChip Desktop</h1>
-          <p className="subtitle">Electron–Python communication diagnostics</p>
-        </div>
-        <span className={`state state-${backend.state}`}>{backend.state}</span>
-      </header>
-
-      <section className="grid">
-        <article className="card">
-          <h2>Python backend</h2>
-          <dl>
-            <div><dt>State</dt><dd>{backend.state}</dd></div>
-            <div><dt>PID</dt><dd>{backend.pid ?? "—"}</dd></div>
-            <div><dt>Python</dt><dd>{status?.python_version ?? "—"}</dd></div>
-            <div><dt>Service</dt><dd>{status?.service_version ?? "—"}</dd></div>
-            <div><dt>Protocol</dt><dd>{status?.protocol_version ?? "—"}</dd></div>
-            <div><dt>Resources</dt><dd>{diagnostics?.valid ? "ready" : "incomplete"}</dd></div>
-          </dl>
-          {backend.lastError && <p className="error">{backend.lastError}</p>}
-          <div className="actions">
-            <button disabled={busy || isRunning} onClick={() => void run(() => window.lmrchip.backend.start())}>Start</button>
-            <button disabled={busy || !isRunning} onClick={() => void run(() => window.lmrchip.backend.request("system.ping"))}>Ping</button>
-            <button disabled={busy} onClick={() => void run(refreshStatus)}>Refresh</button>
-            <button className="secondary" disabled={busy || !isRunning} onClick={() => void run(() => window.lmrchip.backend.stop())}>Stop</button>
-          </div>
-        </article>
-
-        <article className="card logs-card">
-          <div className="card-heading">
-            <h2>Log</h2>
-            <button className="text-button" onClick={() => setLogs([])}>Clear</button>
-          </div>
-          <pre>{logs.length ? logs.join("\n") : "No messages."}</pre>
-        </article>
-      </section>
-      <TemperaturePanel backendRunning={isRunning} />
-      <SpectrometerPanel backendRunning={isRunning} />
-      <MicrofluidicsPanel backendRunning={isRunning} />
-      <ExperimentPanel backendRunning={isRunning} />
-    </main>
-  );
+  const [backend, setBackend] = useState(initialBackend); const [status, setStatus] = useState<BackendStatus["service"]>(null); const [view, setView] = useState<View>("home"); const [selectedProtocolId, setSelectedProtocolId] = useState(""); const [moduleStates, setModuleStates] = useState({ microfluidics: "disconnected", temperature: "disconnected", optics: "disconnected" });
+  useEffect(() => { const remove = window.lmrchip.backend.onStateChange(setBackend); void refresh(); return remove; }, []);
+  useEffect(() => { if (!backend.state || backend.state !== "running") { setModuleStates({ microfluidics: "disconnected", temperature: "disconnected", optics: "disconnected" }); return; } const update = async () => { const [microfluidics, temperature, optics] = await Promise.allSettled(["microfluidics.status", "temperature.status", "spectrometer.status"].map((command) => window.lmrchip.backend.request(command))); setModuleStates({ microfluidics: getConnectionState(microfluidics), temperature: getConnectionState(temperature), optics: getConnectionState(optics) }); }; void update(); const remove = window.lmrchip.backend.onEvent((event) => { const target = event.event.startsWith("microfluidics.") ? "microfluidics" : event.event.startsWith("temperature.") ? "temperature" : event.event.startsWith("spectrometer.") ? "optics" : null; if (!target || !event.event.endsWith("state")) return; const data = event.data as { connection_state?: string }; if (data.connection_state) setModuleStates((current) => ({ ...current, [target]: data.connection_state! })); }); return remove; }, [backend.state]);
+  async function refresh() { try { const result = await window.lmrchip.backend.status(); setBackend(result.process); setStatus(result.service); } catch { setStatus(null); } }
+  const running = backend.state === "running"; const nav: Array<{ id: View; label: string; icon: string }> = [{ id: "home", label: "Home", icon: "⌂" }, { id: "microfluidics", label: "Microfluidics", icon: "▦" }, { id: "temperature", label: "Temperature", icon: "♨" }, { id: "optics", label: "Optics", icon: "⌁" }];
+  return <main className="app-shell"><header className="topbar"><div className="brand"><strong>MicroFlow</strong><span className="version">v1.0</span></div><div className={`system-ready ${running ? "" : "offline"}`}><span />{running ? "SYSTEM READY" : "SYSTEM OFFLINE"}</div></header><div className="app-body"><aside className="sidebar" aria-label="Main navigation">{nav.map((item) => <button key={item.id} className={`nav-item ${view === item.id ? "active" : ""}`} onClick={() => setView(item.id)}><span className="nav-icon">{item.icon}</span><span>{item.label}</span>{item.id !== "home" && <span className={`nav-dot ${moduleStates[item.id === "microfluidics" ? "microfluidics" : item.id === "temperature" ? "temperature" : "optics"] === "connected" ? "online" : ""}`} />}</button>)}</aside><section className="content-area">{view === "home" && <HomeDashboard backendRunning={running} status={status} selectedProtocolId={selectedProtocolId} setSelectedProtocolId={setSelectedProtocolId} />}{view === "microfluidics" && <MicrofluidicsPanel backendRunning={running} />}{view === "temperature" && <TemperaturePanel backendRunning={running} />}{view === "optics" && <SpectrometerPanel backendRunning={running} />}</section></div></main>;
 }
+
+function getConnectionState(result: PromiseSettledResult<unknown>) { return result.status === "fulfilled" && typeof result.value === "object" && result.value !== null && "connection_state" in result.value ? String((result.value as { connection_state: string }).connection_state) : "unknown"; }
+
+function HomeDashboard({ backendRunning, status, selectedProtocolId, setSelectedProtocolId }: { backendRunning: boolean; status: BackendStatus["service"]; selectedProtocolId: string; setSelectedProtocolId: (id: string) => void }) {
+  const [experiment, setExperiment] = useState(initialExperiment); const [temperature, setTemperature] = useState<TemperatureSnapshot | null>(null); const [spectrum, setSpectrum] = useState<SpectrumPayload | null>(null); const [resonance, setResonance] = useState<Array<{ time: number; wavelength: number }>>([]); const [protocols, setProtocols] = useState<Array<{ id: string; name: string }>>([]); const [now, setNow] = useState(Date.now()); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
+  useEffect(() => { const remove = window.lmrchip.backend.onEvent((event) => { if (["experiment.state", "experiment.progress", "experiment.completed", "experiment.cancelled", "experiment.failed"].includes(event.event)) { const next = event.data as ExperimentSnapshot; setExperiment(next); if (next.protocol_id) setSelectedProtocolId(next.protocol_id); } if (event.event === "temperature.state") setTemperature(event.data as TemperatureSnapshot); if (event.event === "temperature.sample") setTemperature((current) => current ? { ...current, latest_sample: event.data as TemperatureSample } : current); if (event.event === "spectrometer.spectrum" || event.event === "spectrometer.transmission") setSpectrum(event.data as SpectrumPayload); if (event.event === "spectrometer.tracking") { const data = event.data as SpectrumPayload; setSpectrum(data); if (typeof data.result?.wavelength === "number") setResonance((current) => [...current.slice(-2399), { time: Date.now(), wavelength: data.result!.wavelength! }]); } }); if (backendRunning) { void window.lmrchip.backend.request("experiment.status").then((value) => { const next = value as ExperimentSnapshot; setExperiment(next); if (next.protocol_id) setSelectedProtocolId(next.protocol_id); }).catch(() => undefined); void window.lmrchip.backend.request("temperature.status").then((value) => setTemperature(value as TemperatureSnapshot)).catch(() => undefined); void window.lmrchip.backend.request("protocol.list").then((value) => { const items = readProtocolList(value); setProtocols(items); if (!selectedProtocolId && items[0]) setSelectedProtocolId(items[0].id); }).catch(() => setProtocols([])); } else { setExperiment(initialExperiment); setTemperature(null); setSpectrum(null); setResonance([]); setProtocols([]); } return remove; }, [backendRunning]);
+  useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
+  async function command(name: string, payload: Record<string, unknown> = {}) { setBusy(true); setMessage(""); try { setExperiment(await window.lmrchip.backend.request(name, payload) as ExperimentSnapshot); } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); } finally { setBusy(false); } }
+  async function startExperiment() { if (!selectedProtocolId) { setMessage("Select a saved protocol before starting."); return; } const folder = await window.lmrchip.selectResultsDirectory(); if (!folder) return; if (!window.confirm("The experiment will move the carousel and needle. Confirm that the area is clear and the physical stop is accessible.")) return; setBusy(true); setMessage(""); try { const validation = await window.lmrchip.backend.request("experiment.validate", { protocol_id: selectedProtocolId, results_root: folder }) as { valid?: boolean }; if (validation.valid === false) return; setExperiment(await window.lmrchip.backend.request("experiment.start", { protocol_id: selectedProtocolId, results_root: folder }) as ExperimentSnapshot); } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); } finally { setBusy(false); } }
+  const active = experiment.state === "running" || experiment.state === "paused"; const progress = homeProgress(experiment); const elapsed = experiment.started_at ? Math.max(0, Math.floor((now - Date.parse(experiment.started_at)) / 1000)) : 0; const elapsedText = `${String(Math.floor(elapsed / 3600)).padStart(2, "0")}:${String(Math.floor(elapsed / 60) % 60).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
+  return <div className="home-dashboard"><div className="home-protocol-toolbar"><label>Protocol<select value={selectedProtocolId} disabled={active || busy} onChange={(event) => setSelectedProtocolId(event.target.value)}><option value="">Select saved protocol</option>{protocols.map((protocol) => <option key={protocol.id} value={protocol.id}>{protocol.name}</option>)}</select></label>{experiment.protocol_name && <span>Active: {experiment.protocol_name}</span>}</div><article className="home-progress-card"><div className="home-experiment-label"><span className="home-small">{active ? "Experiment running" : "Experiment"}</span><strong>{active ? (experiment.protocol_name ?? "Active protocol") : "No active experiment"}</strong></div><div className="home-progress-track"><div style={{ width: `${progress}%` }} /></div><div className="home-progress-summary"><strong>{progress} %</strong><span>◷ &nbsp;{elapsedText} elapsed</span></div></article><div className="home-dashboard-grid"><div className="home-dashboard-left"><HomeChart title="LMR Detection Sensorgram" type="sensor" resonance={resonance} /><HomeChart title="LMR Spectrum" type="spectrum" spectrum={spectrum} /></div><div className="home-dashboard-right"><ExecutionSequence experiment={experiment} /><TemperatureSummary temperature={temperature} /><div className="home-general-controls"><button className="home-start" disabled={!backendRunning || active || busy || !selectedProtocolId} onClick={() => void startExperiment()}>▶ &nbsp;Start</button><button disabled={!active || busy || (experiment.state === "running" && experiment.pause_requested)} onClick={() => void command(experiment.state === "paused" ? "experiment.resume" : "experiment.pause")}>{experiment.state === "paused" ? "▶  Resume" : "Ⅱ  Pause"}</button><button className="home-stop" disabled={!active || busy} onClick={() => void command("experiment.cancel")}>■ &nbsp;Stop</button></div>{message && <p className="error">{message}</p>}</div></div><div className="home-system-note">{status ? `${status.service_version} · ${status.python_version}` : "Backend offline"}</div></div>;
+}
+
+function ExecutionSequence({ experiment }: { experiment: ExperimentSnapshot }) { const protocol = experiment.protocol; const steps = protocol?.steps ?? []; const samples = protocol?.samples ?? []; const legacyTubes = experiment.config?.tubes ?? []; const rows = steps.length ? steps.slice(0, experiment.total_steps ?? steps.length) : legacyTubes.map((tube) => ({ sample_id: null, flow_rate: null, duration_seconds: null, tube })); const completed = new Set(experiment.completed_steps ?? []); return <article className="home-reference-panel home-sequence"><h2>▱ &nbsp;Execution sequence</h2><div className="home-steps">{rows.length ? rows.map((step, index) => { const tube = step.tube ?? (protocol?.positions.findIndex((position) => position.sample_id === step.sample_id) ?? -1) + 1; const sample = step.sample_id ? samples.find((item) => item.id === step.sample_id)?.name ?? step.sample_id : "Not configured"; const done = completed.has(index) || (!steps.length && experiment.completed_tubes.includes(tube)); const current = experiment.current_step === index || (!steps.length && experiment.current_tube === tube && activeExperiment(experiment)); const kind = done ? "done" : current ? "running" : "pending"; const details = [sample, tube > 0 ? `Tube ${tube}` : null, typeof step.flow_rate === "number" ? `${step.flow_rate} µL/min` : null, typeof step.duration_seconds === "number" ? `${step.duration_seconds} s` : null].filter(Boolean).join(" · "); return <div className={`home-step ${kind}`} key={`${step.sample_id ?? "step"}-${index}`}><span className="home-step-dot">{done ? "✓" : current ? "▶" : ""}</span><div><strong>Step {index + 1} · {details}</strong><small>{current ? (experiment.state === "paused" ? "Paused" : experiment.phase) : done ? "Completed" : "Pending"}</small></div><em>{done ? "Done" : current ? (experiment.state === "paused" ? "Paused" : "Running") : "Pending"}</em></div>; }) : <p className="home-chart-empty">No protocol loaded.</p>}</div></article>; }
+function activeExperiment(experiment: ExperimentSnapshot) { return experiment.state === "running" || experiment.state === "paused"; }
+function TemperatureSummary({ temperature }: { temperature: TemperatureSnapshot | null }) { const sample = temperature?.latest_sample; return <article className="home-reference-panel home-temperature"><h2>♨ &nbsp;Temperature</h2><div className="home-temp-grid"><div><span>Cell</span><strong>{typeof sample?.active_temp === "number" ? `${sample.active_temp.toFixed(1)} °C` : "—"}</strong></div><div><span>Environment</span><strong>{typeof sample?.ambient_temp === "number" ? `${sample.ambient_temp.toFixed(1)} °C` : "—"}</strong></div></div></article>; }
+function HomeChart({ title, type, resonance = [], spectrum = null }: { title: string; type: "sensor" | "spectrum"; resonance?: Array<{ time: number; wavelength: number }>; spectrum?: SpectrumPayload | null }) { const points = useMemo(() => type === "sensor" ? chartPoints(resonance.map((point) => point.time), resonance.map((point) => point.wavelength)) : chartPoints(spectrum?.wavelengths ?? [], spectrum?.values ?? []), [type, resonance, spectrum]); return <article className="home-reference-panel home-chart"><div className="home-chart-title"><h2>{title}</h2><div><button>⌕</button><button>⛶</button><button>⋮</button></div></div><svg viewBox="0 0 900 230"><g className="home-grid-lines"><line x1="65" y1="20" x2="65" y2="195" /><line x1="65" y1="195" x2="880" y2="195" /><line x1="65" y1="65" x2="880" y2="65" /><line x1="65" y1="110" x2="880" y2="110" /><line x1="65" y1="150" x2="880" y2="150" /></g>{points && <polyline points={points} className="home-chart-line" />}</svg>{!points && <p className="home-chart-empty">Waiting for real data...</p>}<div className="home-chart-axis">{type === "sensor" ? "Time (min)" : "Wavelength (nm)"}</div></article>; }
+function chartPoints(xs: Array<number | null>, ys: Array<number | null>) { const pairs = xs.map((x, index) => [x, ys[index]] as const).filter((pair): pair is readonly [number, number] => pair[0] !== null && pair[1] !== null); if (pairs.length < 2) return null; const minX = Math.min(...pairs.map((pair) => pair[0])); const maxX = Math.max(...pairs.map((pair) => pair[0])); const minY = Math.min(...pairs.map((pair) => pair[1])); const maxY = Math.max(...pairs.map((pair) => pair[1])); return pairs.map(([x, y]) => `${65 + ((x - minX) / Math.max(maxX - minX, 1)) * 815},${195 - ((y - minY) / Math.max(maxY - minY, 1)) * 175}`).join(" "); }

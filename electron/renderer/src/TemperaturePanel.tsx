@@ -1,190 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
+import { attachMonitoring, isStable, readingState, regulatorLabel, samplePoint, type TemperatureHistoryPoint } from "./temperatureIntegration";
 
-
-interface HistoryPoint {
-  time: number;
-  block: number;
-  setpoint: number;
-}
-
-const disconnected: TemperatureSnapshot = {
-  connection_state: "disconnected",
-  control_state: "stopped",
-  port: null,
-  version: null,
-  simulation: false,
-  latest_sample: null,
-  latest_monitoring: null,
-};
+type Point = TemperatureHistoryPoint;
+const disconnected: TemperatureSnapshot = { connection_state: "disconnected", control_state: "stopped", port: null, version: null, simulation: false, latest_sample: null, latest_monitoring: null };
 
 export function TemperaturePanel({ backendRunning }: { backendRunning: boolean }) {
-  const [state, setState] = useState<TemperatureSnapshot>(disconnected);
-  const [ports, setPorts] = useState<string[]>([]);
-  const [selectedPort, setSelectedPort] = useState("");
-  const [setpoint, setSetpoint] = useState(37);
-  const [history, setHistory] = useState<HistoryPoint[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
+  const [state, setState] = useState<TemperatureSnapshot>(disconnected); const [ports, setPorts] = useState<string[]>([]); const [selectedPort, setSelectedPort] = useState(""); const [setpoint, setSetpoint] = useState(37); const [history, setHistory] = useState<Point[]>([]); const [pendingMonitoring, setPendingMonitoring] = useState<TemperatureMonitoring | null>(null); const [error, setError] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   useEffect(() => window.lmrchip.backend.onEvent((message) => {
-    if (message.event === "temperature.state") {
-      setState(message.data as TemperatureSnapshot);
-    } else if (message.event === "temperature.sample") {
-      const sample = message.data as TemperatureSample;
-      setState((current) => ({ ...current, latest_sample: sample }));
-      if (typeof sample.block_temp === "number" && typeof sample.setpoint === "number") {
-        const now = Date.now();
-        setHistory((current) => [
-          ...current.filter((point) => now - point.time <= 600_000),
-          { time: now, block: sample.block_temp!, setpoint: sample.setpoint! },
-        ].slice(-3000));
-      }
-    } else if (message.event === "temperature.monitoring") {
-      setState((current) => ({ ...current, latest_monitoring: message.data as TemperatureMonitoring }));
-    } else if (message.event === "temperature.error") {
-      const event = message.data as { code: string; message: string };
-      setError(`${event.code}: ${event.message}`);
-    }
+    if (message.event === "temperature.state") { const next = message.data as TemperatureSnapshot; setState(next); if (typeof next.latest_sample?.setpoint === "number") setSetpoint(next.latest_sample.setpoint); }
+    if (message.event === "temperature.sample") { const sample = message.data as TemperatureSample; const time = Date.now(); setState((current) => ({ ...current, latest_sample: sample })); setHistory((current) => { const next = [...current.slice(-2999), samplePoint(sample, time)]; return pendingMonitoring ? attachMonitoring(next, pendingMonitoring, time) : next; }); if (pendingMonitoring) setPendingMonitoring(null); }
+    if (message.event === "temperature.monitoring") { const monitoring = message.data as TemperatureMonitoring; const time = Date.now(); setState((current) => ({ ...current, latest_monitoring: monitoring })); setHistory((current) => { const next = attachMonitoring(current, monitoring, time); if (next === current) setPendingMonitoring(monitoring); return next; }); }
+    if (message.event === "temperature.error") { const data = message.data as { code: string; message: string }; setError(`${data.code}: ${data.message}`); }
   }), []);
-
-  useEffect(() => {
-    if (backendRunning) {
-      void refreshStatus();
-      void refreshPorts();
-    } else {
-      setState(disconnected);
-      setPorts([]);
-    }
-  }, [backendRunning]);
-
-  async function execute(action: () => Promise<unknown>) {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await action();
-      if (result && typeof result === "object" && "connection_state" in result) {
-        setState(result as TemperatureSnapshot);
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function refreshPorts() {
-    try {
-      const result = await window.lmrchip.backend.request("temperature.list_ports") as { ports: string[] };
-      setPorts(result.ports);
-      setSelectedPort((current) => current || result.ports[0] || "");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    }
-  }
-
-  async function refreshStatus() {
-    try {
-      const result = await window.lmrchip.backend.request("temperature.status") as TemperatureSnapshot;
-      setState(result);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    }
-  }
-
-  const connected = state.connection_state === "connected";
-  const running = state.control_state === "running";
-  const sample = state.latest_sample;
-  const monitoring = state.latest_monitoring;
-
-  return (
-    <section className="temperature-section">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Module 1</p>
-          <h2>Temperature control</h2>
-        </div>
-        <span className={`state state-${state.connection_state}`}>{state.connection_state}</span>
-      </div>
-
-      <div className="temperature-grid">
-        <article className="card controls-card">
-          <label>Puerto</label>
-          <div className="inline-control">
-            <select value={selectedPort} disabled={!backendRunning || connected || busy} onChange={(event) => setSelectedPort(event.target.value)}>
-              {ports.length === 0 && <option value="">No ports</option>}
-              {ports.map((port) => <option key={port}>{port}</option>)}
-            </select>
-            <button disabled={!backendRunning || connected || busy} onClick={() => void refreshPorts()}>Refresh</button>
-          </div>
-          <div className="actions">
-            <button disabled={!backendRunning || connected || busy || !selectedPort} onClick={() => void execute(() => window.lmrchip.backend.request("temperature.connect", { port: selectedPort }))}>Connect</button>
-            <button className="secondary" disabled={!connected || busy} onClick={() => void execute(() => window.lmrchip.backend.request("temperature.disconnect"))}>Disconnect</button>
-          </div>
-
-          <label htmlFor="setpoint">Setpoint (°C)</label>
-          <input id="setpoint" type="number" min="10" max="80" step="0.1" value={setpoint} disabled={!connected || running || busy} onChange={(event) => setSetpoint(Number(event.target.value))} />
-          <div className="actions">
-            <button disabled={!connected || running || busy || setpoint < 10 || setpoint > 80} onClick={() => void execute(() => window.lmrchip.backend.request("temperature.start", { setpoint }))}>Start control</button>
-            <button className="secondary" disabled={!connected || !running || busy} onClick={() => void execute(() => window.lmrchip.backend.request("temperature.stop"))}>Stop</button>
-          </div>
-          {state.simulation && <p className="simulation">Simulation mode active</p>}
-          {error && <p className="error">{error}</p>}
-        </article>
-
-        <article className="card readings-card">
-          <h2>Readings</h2>
-          <div className="readings">
-            <Reading label="Block" value={sample?.block_temp} unit="°C" />
-            <Reading label="Active" value={sample?.active_temp} unit="°C" />
-            <Reading label="Ambient" value={sample?.ambient_temp} unit="°C" />
-            <Reading label="Onboard" value={monitoring?.onboard_temp} unit="°C" />
-            <Reading label="Setpoint" value={sample?.setpoint} unit="°C" />
-            <Reading label="Output" value={sample?.output} unit="%" />
-            <Reading label="Voltage" value={monitoring?.input_voltage} unit="V" />
-            <Reading label="Current" value={monitoring?.main_current} unit="A" />
-          </div>
-          <p className="raw-line">{sample?.raw_line ?? "No A3 data."}</p>
-        </article>
-
-        <article className="card chart-card">
-          <div className="card-heading"><h2>Last 10 minutes</h2><button className="text-button" onClick={() => setHistory([])}>Clear</button></div>
-          <TemperatureChart points={history} />
-        </article>
-      </div>
-    </section>
-  );
+  useEffect(() => { if (backendRunning) { void refreshStatus(); void refreshPorts(); } else { setState(disconnected); setPorts([]); setHistory([]); setPendingMonitoring(null); } }, [backendRunning]);
+  async function refreshPorts() { try { const result = await window.lmrchip.backend.request("temperature.list_ports") as { ports: string[] }; setPorts(result.ports); setSelectedPort((current) => current || result.ports[0] || ""); } catch (caught) { setError(String(caught)); } }
+  async function refreshStatus() { try { setState(await window.lmrchip.backend.request("temperature.status") as TemperatureSnapshot); } catch (caught) { setError(String(caught)); } }
+  async function execute(action: () => Promise<unknown>) { setBusy(true); setError(null); try { const result = await action(); if (result && typeof result === "object" && "connection_state" in result) setState(result as TemperatureSnapshot); } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); } finally { setBusy(false); } }
+  const connected = state.connection_state === "connected"; const running = state.control_state === "running"; const stable = isStable(history, state.control_state); const statusText = regulatorLabel(state.control_state, stable); const sample = state.latest_sample; const monitoring = state.latest_monitoring;
+  return <section className="temperature-section temperature-reference"><div className="temperature-reference-layout"><div className="temperature-reference-left">
+    <article className="card temperature-reference-chart"><div className="card-heading"><h2>Temperature history</h2><button className="text-button" onClick={() => setHistory([])}>Clear</button></div><TemperatureChart points={history} /></article>
+    <article className="card temperature-sensors"><h2>Sensors</h2><div className="sensor-grid"><Sensor label="Environment" value={sample?.ambient_temp} connection={state.connection_state} tone="environment" /><Sensor label="Cell" value={sample?.active_temp ?? sample?.block_temp} connection={state.connection_state} tone="cell" /><Sensor label="Onboard" value={monitoring?.onboard_temp} connection={state.connection_state} tone="onboard" /></div></article>
+  </div><div className="temperature-reference-right">
+    <article className="card temperature-reference-card"><h2>Regulator status</h2><div className="config-row"><label htmlFor="setpoint">SetPoint</label><input id="setpoint" type="number" min="10" max="80" step="0.1" value={typeof sample?.setpoint === "number" ? sample.setpoint : setpoint} disabled={!connected || running || busy} onChange={(event) => setSetpoint(Number(event.target.value))} /></div><div className="diag-row"><span>Control status</span><span className={statusText === "Stable" ? "stable-status" : ""}>{statusText}</span></div></article>
+    <article className="card temperature-reference-card"><h2>Regulator control</h2><p className="small centered">Cell temperature</p><div className="reading">{typeof sample?.active_temp === "number" ? `${sample.active_temp.toFixed(1)} °C` : "—"}</div><div className="big-buttons"><button disabled={!connected || running || busy || setpoint < 10 || setpoint > 80} onClick={() => void execute(() => window.lmrchip.backend.request("temperature.start", { setpoint }))}>▶ &nbsp;Control start</button><button className="action stop" disabled={!connected || !running || busy} onClick={() => void execute(() => window.lmrchip.backend.request("temperature.stop"))}>■ &nbsp;Stop</button></div></article>
+    <article className="card temperature-reference-card"><h2>Fan control</h2><div className="config-row"><label htmlFor="fan-mode">Mode</label><select id="fan-mode" value="UNAVAILABLE" disabled><option>Unavailable</option></select></div><p className="notice">Fan control is unavailable: no backend API is exposed.</p></article>
+    <article className="card temperature-reference-card"><h2>Diagnostics</h2><div className="diagnostics"><Diag label="Output" value={typeof sample?.output === "number" ? `${sample.output.toFixed(0)} %` : sensorText(state.connection_state)} /><Diag label="Input voltage" value={typeof monitoring?.input_voltage === "number" ? `${monitoring.input_voltage.toFixed(1)} V` : sensorText(state.connection_state)} /><Diag label="Main current" value={typeof monitoring?.main_current === "number" ? `${monitoring.main_current.toFixed(1)} A` : sensorText(state.connection_state)} /><Diag label="Active Ta" value={typeof sample?.active_temp === "number" ? `${sample.active_temp.toFixed(1)} °C` : sensorText(state.connection_state)} /><Diag label="Control status" value={statusText} stable={stable} /></div>{error && <p className="error">{error}</p>}</article>
+  </div></div></section>;
 }
 
-function Reading({ label, value, unit }: { label: string; value: number | null | undefined; unit: string }) {
-  return <div><span>{label}</span><strong>{typeof value === "number" ? `${value.toFixed(2)} ${unit}` : "—"}</strong></div>;
-}
-
-function TemperatureChart({ points }: { points: HistoryPoint[] }) {
-  const geometry = useMemo(() => {
-    if (points.length < 2) return null;
-    const values = points.flatMap((point) => [point.block, point.setpoint]);
-    const min = Math.min(...values) - 0.5;
-    const max = Math.max(...values) + 0.5;
-    const start = points[0].time;
-    const duration = Math.max(points[points.length - 1].time - start, 1);
-    const line = (key: "block" | "setpoint") => points.map((point) => {
-      const x = ((point.time - start) / duration) * 1000;
-      const y = 240 - ((point[key] - min) / (max - min)) * 220;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" ");
-    return { block: line("block"), setpoint: line("setpoint"), min, max };
-  }, [points]);
-
-  if (!geometry) return <div className="empty-chart">Waiting for samples...</div>;
-  return (
-    <div>
-      <svg viewBox="0 0 1000 260" role="img" aria-label="Temperature history">
-        <line x1="0" y1="20" x2="1000" y2="20" className="grid-line" />
-        <line x1="0" y1="240" x2="1000" y2="240" className="grid-line" />
-        <polyline points={geometry.setpoint} className="setpoint-line" />
-        <polyline points={geometry.block} className="temperature-line" />
-      </svg>
-      <div className="chart-legend"><span className="block-key">Block</span><span className="setpoint-key">Setpoint</span><span>{geometry.min.toFixed(1)}–{geometry.max.toFixed(1)} °C</span></div>
-    </div>
-  );
-}
+function sensorText(connection: TemperatureSnapshot["connection_state"]) { return connection === "connected" ? "Unavailable" : connection === "unknown" ? "Unknown" : "Disconnected"; }
+function Sensor({ label, value, connection, tone }: { label: string; value: number | null | undefined; connection: TemperatureSnapshot["connection_state"]; tone: string }) { const status = readingState(connection, value); return <div className={`sensor ${tone}`}><label>{label}</label><strong>{status === "valid" ? `${value!.toFixed(1)} °C` : status === "unavailable" ? "Unavailable" : status === "disconnected" ? "Disconnected" : "Unknown"}</strong></div>; }
+function Diag({ label, value, stable = false }: { label: string; value: string; stable?: boolean }) { return <div className="diag-row"><span>{label}</span><span className={stable ? "stable-status" : ""}>{value}</span></div>; }
+function TemperatureChart({ points }: { points: Point[] }) { const geometry = useMemo(() => { const valid = (key: keyof Omit<Point, "time">) => points.filter((point) => typeof point[key] === "number") as Array<Point & Record<typeof key, number>>; const all = points.flatMap((point) => [point.environment, point.cell, point.onboard, point.setpoint].filter((value): value is number => typeof value === "number")); if (all.length < 2) return null; const min = Math.min(...all) - .5; const max = Math.max(...all) + .5; const start = points[0].time; const duration = Math.max(points.at(-1)!.time - start, 1); const line = (key: keyof Omit<Point, "time">) => valid(key).map((point) => `${(((point.time - start) / duration) * 1000).toFixed(1)},${(350 - ((point[key] - min) / (max - min)) * 320).toFixed(1)}`).join(" "); return { environment: line("environment"), cell: line("cell"), onboard: line("onboard"), setpoint: line("setpoint") }; }, [points]); if (!geometry) return <div className="empty-chart">Waiting for samples...</div>; return <div className="temperature-chart-wrap"><svg className="temperature-reference-svg" viewBox="0 0 1000 410"><polyline points={geometry.environment} className="temperature-environment-line" /><polyline points={geometry.cell} className="temperature-cell-line" /><polyline points={geometry.onboard} className="temperature-onboard-line" /><polyline points={geometry.setpoint} className="temperature-setpoint-line" /></svg><div className="temperature-legend"><span className="env-key">Environment</span><span className="cell-key">Cell</span><span className="onboard-key">Onboard</span><span className="setpoint-key">SetPoint</span></div><div className="chart-axis">Time (min)</div></div>; }

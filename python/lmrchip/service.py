@@ -26,6 +26,7 @@ from .temperature.manager import TemperatureManager
 from .spectroscopy.manager import SpectrometerManager
 from .microfluidics.manager import MicrofluidicsManager
 from .experiment.manager import ExperimentManager
+from .protocols import ProtocolStore
 
 
 LOGGER = logging.getLogger("lmrchip.service")
@@ -39,11 +40,12 @@ class LMRChipService:
         self.shutting_down = False
         self._external_event_sink = event_sink or (lambda _event, _data: None)
         self.experiment: ExperimentManager | None = None
+        self.protocols = ProtocolStore()
         self.temperature = TemperatureManager(self._route_event)
         self.spectrometer = SpectrometerManager(self._route_event)
         self.microfluidics = MicrofluidicsManager(self._route_event)
         self.experiment = ExperimentManager(
-            self.temperature, self.spectrometer, self.microfluidics, self._external_event_sink
+            self.temperature, self.spectrometer, self.microfluidics, self._external_event_sink, self.protocols
         )
         self._commands: dict[str, CommandHandler] = {
             "system.ping": self._ping,
@@ -63,6 +65,7 @@ class LMRChipService:
             "spectrometer.capture_reference": lambda payload: self.spectrometer.capture("reference"),
             "spectrometer.capture_sample": lambda payload: self.spectrometer.capture("sample"),
             "spectrometer.calculate_transmission": lambda payload: self.spectrometer.calculate_transmission(),
+            "spectrometer.detect_resonance": lambda payload: self.spectrometer.detect_resonance_once(),
             "spectrometer.start_tracking": lambda payload: self.spectrometer.start_tracking(),
             "spectrometer.stop_tracking": lambda payload: self.spectrometer.stop_tracking(),
             "spectrometer.status": lambda payload: self.spectrometer.snapshot(),
@@ -82,6 +85,12 @@ class LMRChipService:
             "experiment.resume": lambda payload: self.experiment.resume(),
             "experiment.cancel": lambda payload: self.experiment.cancel(),
             "experiment.status": lambda payload: self.experiment.snapshot(),
+            "protocol.new": lambda payload: self.protocols.new(payload.get("name", "New protocol")),
+            "protocol.validate": lambda payload: self.protocols.validate(payload.get("protocol")),
+            "protocol.save": lambda payload: self.protocols.save(payload.get("protocol")),
+            "protocol.load": lambda payload: self.protocols.load(payload.get("protocol_id")),
+            "protocol.list": lambda payload: {"protocols": self.protocols.list()},
+            "protocol.import": lambda payload: self.protocols.save(payload.get("protocol")),
         }
 
     def _route_event(self, event: str, data: dict[str, Any]) -> None:
