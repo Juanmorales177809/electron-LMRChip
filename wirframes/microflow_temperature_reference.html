@@ -42,7 +42,7 @@ document.getElementById('regulator-start').addEventListener('click',()=>{regulat
 document.getElementById('regulator-stop').addEventListener('click',()=>{regulatorRunning=false;regulatorStatus.textContent='● Stopped (demo)';regulatorStatus.style.color='#d42b2b';showInfo('Stop: demostración sin conexión al equipo.');});
 const info=document.getElementById('prototype-notice');
 function showInfo(message){info.textContent=message;info.hidden=false;clearTimeout(window._timer);window._timer=setTimeout(()=>info.hidden=true,3500)}
-document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>{if(btn.dataset.view!=='temperature')showInfo('Esta referencia HTML contiene solo la ventana Temperature.')}));
+document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>{const pages={home:'microflow_reference.html',microfluidics:'microflow_microfluidics_reference.html',optics:'microflow_optics_reference.html'};if(pages[btn.dataset.view])window.location.href=pages[btn.dataset.view]}));
 document.getElementById('setpoint').addEventListener('change',e=>{const v=Number(e.target.value);if(!Number.isFinite(v)||v<15||v>45){showInfo('Rango de ejemplo: 15–45 °C');e.target.value='37.0';}else showInfo('SetPoint visual: '+v.toFixed(1)+' °C. No se envía al equipo.');});
 document.getElementById('fan-mode').addEventListener('change',e=>showInfo('Fan mode visual: '+e.target.value+'. No se envía al equipo.'));
 </script></body></html>
