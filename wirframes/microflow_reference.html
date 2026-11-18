@@ -27,6 +27,21 @@
 <section id="view-microfluidics" class="view" aria-label="Microfluidics"><h1 class="placeholder-heading">Microfluidics</h1><div class="placeholder-grid"><section class="panel placeholder-card"><div class="title-left"><svg class="nav-icon" style="color:var(--accent)"><use href="#i-chip"/></svg><h2>Pump and channel control</h2></div><p>This is a visual placeholder. Integrate the existing MicroFlow microfluidics controls here without changing their hardware behavior.</p><div class="config-row"><label>Channel</label><select><option>E1 · Streptavidin</option><option>E2 · PBS Wash</option><option>E3 · APT-biot</option><option>E4 · PSA Sample</option></select></div><div class="config-row" style="margin-top:16px"><label>Flow rate (μL/min)</label><input type="number" value="7" min="0" step="1"></div></section><section class="panel placeholder-card"><h2>Connection status</h2><p><span class="dot"></span> &nbsp; Microfluidics module connected</p><p class="notice">Reference layout only. No pump commands are sent.</p></section></div></section>
 <section id="view-optics" class="view" aria-label="Optics"><h1 class="placeholder-heading">Optics</h1><div class="placeholder-grid"><section class="panel chart-panel"><div class="panel-title"><div class="title-left"><svg class="nav-icon" style="color:var(--accent)"><use href="#i-wave"/></svg><h2>LMR spectrum</h2></div></div><canvas class="chart-canvas spectrum" data-chart="spectrum" width="800" height="225"></canvas></section><section class="panel placeholder-card"><h2>Optical measurement</h2><p>Place the existing optical acquisition settings, status and actions here.</p><div class="config-row"><label>Selected resonance</label><strong>703.2 nm</strong></div><p class="notice">Reference layout only. No spectrometer commands are sent.</p></section></div></section>
 <p class="footer-note">UI reference · Demonstration values only · Not connected to laboratory equipment</p></main></div></div>
+<style>.brand svg{display:none}</style>
+<script>
+document.querySelector('.brand svg')?.remove();
+document.querySelectorAll('.chart-panel .title-left > svg, .sequence-title > svg, .temp-panel > .title-left > svg').forEach(icon => icon.remove());
+document.querySelectorAll('.temp-panel .temp-icon').forEach(icon => icon.remove());
+document.querySelector('.experiment .small').textContent='Experiment in progress';
+document.querySelector('.elapsed').lastChild.textContent=' elapsed';
+document.querySelector('.chart-panel h2').textContent='Sensorgram (LMR)';
+document.querySelectorAll('.chart-panel h2')[1].textContent='Spectrum (LMR)';
+document.querySelector('.temp-panel h2').textContent='Temperature';
+document.querySelectorAll('.temp-card .small')[0].textContent='Cell';
+document.querySelectorAll('.temp-card .small')[1].textContent='Environment';
+const originalFillText=CanvasRenderingContext2D.prototype.fillText;
+CanvasRenderingContext2D.prototype.fillText=function(text,...args){const translations={'Tiempo (min)':'Time (min)','Longitud de onda (nm)':'Wavelength (nm)','Transmisión (a.u.)':'Transmission (a.u.)'};return originalFillText.call(this,translations[text]||text,...args)};
+</script>
 <script>
 // Standalone visual prototype. No Electron IPC, no hardware actions and no network requests.
 const nav=[...document.querySelectorAll('[data-view]')];const views=[...document.querySelectorAll('.view')];let experimentState='running';
@@ -42,5 +57,7 @@ function spectrum(canvas){const {ctx,w,h}=setup(canvas);const {x,y,P}=axes(ctx,w
 function temperature(canvas){const {ctx,w,h}=setup(canvas);const {x,y,P}=axes(ctx,w,h,{xmin:0,xmax:120,ymin:15,ymax:45,xstep:20,ystep:5,xlabel:'Time (min)',ylabel:'Temperature (°C)'});const curve=(target,k,t)=>22+(target-22)*(1-Math.exp(-Math.pow(t/k,1.7)));plot(ctx,t=>22+1.8*t/120+.07*Math.sin(t*2.5),0,120,x,y,'#75849b',2.5);plot(ctx,t=>curve(37,23,t)+.05*Math.sin(t*3.2),0,120,x,y,C.orange,3);plot(ctx,t=>curve(31.4,37,t)+.03*Math.sin(t*3),0,120,x,y,C.blue,3);plot(ctx,()=>37,0,120,x,y,'#00a9a1',2,[8,5]);const legend=[['#75849b','Environment'],[C.orange,'Cell'],[C.blue,'Onboard'],['#00a9a1','SetPoint']];ctx.fillStyle='white';ctx.strokeStyle='#d7dfe5';ctx.fillRect(w-173,1,167,89);ctx.strokeRect(w-173,1,167,89);legend.forEach(([color,text],i)=>{const yy=15+i*20;ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.setLineDash(i===3?[5,4]:[]);ctx.beginPath();ctx.moveTo(w-163,yy);ctx.lineTo(w-137,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=C.ink;ctx.textAlign='left';ctx.font='12px "Segoe UI",Arial';ctx.fillText(text,w-130,yy+4)})}
 function drawCharts(){document.querySelectorAll('canvas[data-chart]').forEach(c=>{if(c.closest('.view').classList.contains('active'))({sensorgram,spectrum,temperature}[c.dataset.chart]||(()=>{}))(c)})}drawCharts();
 </script>
+<style>.system-badge{background:#fff0f0;color:#b4232d}.system-badge .dot{background:#d9303e}</style>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="3.5"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.8 1.9c-.9.6-1.5 1-1.5 2.1M12 16.5h.01"/></symbol></svg>
 </body>
-</html>
+<style>.sidebar{display:flex;flex-direction:column}.nav-footer{margin-top:auto;padding-top:18px;border-top:1px solid var(--stroke);display:grid;gap:10px}.nav-footer .nav-btn{margin:0}</style><script>document.querySelectorAll('.sidebar').forEach(sidebar=>{const footer=document.createElement('div');footer.className='nav-footer';footer.innerHTML='<button class="nav-btn" type="button"><svg class="nav-icon"><use href="#i-settings"></use></svg><span class="nav-name">Settings</span></button><button class="nav-btn" type="button"><svg class="nav-icon"><use href="#i-help"></use></svg><span class="nav-name">Help</span></button>';sidebar.append(footer)});</script></html>
