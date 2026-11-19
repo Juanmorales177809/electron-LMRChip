@@ -1,0 +1,96 @@
+/* Shared visual system for the copied wireframes. Original wireframes are unchanged. */
+:root {
+  --header-height: 76px;
+  --sidebar-width: 254px;
+  --sidebar-width-tablet: 220px;
+  --sidebar-width-mobile: 72px;
+  --font-family: Inter, "Segoe UI", Arial, sans-serif;
+  --font-size-base: 15px;
+  --font-size-nav: 16px;
+  --icon-size-nav: 26px;
+  --shared-accent: #008987;
+  --shared-accent-tint: #dff2f1;
+  --shared-ink: #111c30;
+  --shared-stroke: #d7dfe5;
+}
+
+html, body { min-height: 100%; }
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--shared-ink);
+}
+
+/* Main MicroFlow shell */
+.app { grid-template-rows: var(--header-height) minmax(0, 1fr); }
+.header, header {
+  min-height: var(--header-height);
+  font-family: var(--font-family);
+}
+.shell, .body {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+}
+.sidebar, .side {
+  width: var(--sidebar-width);
+  box-sizing: border-box;
+}
+.nav-btn, .nav {
+  font-family: var(--font-family);
+  font-size: var(--font-size-nav);
+}
+.nav-icon, .nav svg {
+  width: var(--icon-size-nav);
+  height: var(--icon-size-nav);
+  flex: 0 0 var(--icon-size-nav);
+}
+
+/* Temperature copy has no i-help symbol in its inline sprite. Keep Help visible. */
+.nav-footer button:nth-child(2) .nav-icon {
+  display: none;
+}
+.nav-footer button:nth-child(2)::before {
+  content: "?";
+  width: var(--icon-size-nav);
+  height: var(--icon-size-nav);
+  border: 1.8px solid currentColor;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  font-size: 16px;
+  font-weight: 700;
+  flex: 0 0 var(--icon-size-nav);
+}
+
+/* Optics uses legacy navigation class names; normalize them too. */
+.body .nav {
+  padding: 0 18px;
+  margin: 0;
+  gap: 10px;
+  min-height: 57px;
+  border-radius: 9px;
+  font-size: var(--font-size-nav);
+}
+.body .nav-item, .body .nav {
+  color: var(--shared-ink);
+}
+.body .nav-item { min-height: 57px; padding: 0 18px; font-size: var(--font-size-nav); }
+
+@media (max-width: 1190px) {
+  :root { --sidebar-width: var(--sidebar-width-tablet); }
+  .shell, .body { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+  .sidebar, .side { width: var(--sidebar-width); }
+}
+
+@media (max-width: 860px) {
+  :root { --sidebar-width: var(--sidebar-width-mobile); }
+  .shell, .body { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+  .sidebar, .side { width: var(--sidebar-width); }
+  .nav-btn, .body .nav-item { justify-content: center; padding-left: 0; padding-right: 0; }
+  .nav-name, .body .nav-item span:not(.dot) { display: none; }
+}
+
+@media (max-width: 620px) {
+  .header, header { min-height: 68px; }
+  .app { grid-template-rows: 68px minmax(0, 1fr); }
+}
