@@ -75,3 +75,49 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>{const pages={Hom
 rerender();
 const syncSamplePanelHeights=()=>{};
 </script><style>.system-badge{background:#fff0f0;color:#b4232d}.system-badge .dot{background:#d9303e}.sidebar{display:flex;flex-direction:column}.nav-footer{margin-top:auto;padding-top:18px;border-top:1px solid var(--stroke);display:grid;gap:10px}.nav-footer .nav-btn{margin:0}</style><script>document.querySelectorAll('.sidebar').forEach(sidebar=>{const footer=document.createElement('div');footer.className='nav-footer';footer.innerHTML='<button class="nav-btn" type="button"><svg class="nav-icon"><use href="#i-settings"></use></svg><span class="nav-name">Settings</span></button><button class="nav-btn" type="button"><svg class="nav-icon"><use href="#i-help"></use></svg><span class="nav-name">Help</span></button>';sidebar.append(footer)});</script></body></html>
+<script>document.addEventListener('DOMContentLoaded',()=>document.querySelectorAll('.nav-footer button:first-child').forEach(b=>{const i=b.querySelector('svg');if(i)i.outerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.65-.07-.98s-.02-.66-.07-.98l2.11-1.65-2-3.46-2.49 1a7.2 7.2 0 0 0-1.69-.98L15 3h-4l-.36 2.93c-.61.25-1.18.58-1.69.98l-2.49-1-2 3.46 2.11 1.65c-.04.32-.07.65-.07.98s.02-.66-.07-.98l-2.11 1.65 2 3.46 2.49-1c.51-.4 1.08.73 1.69.98L11 21h4l.36-2.93c-.61-.25-1.18.58-1.69.98l2.49 1 2-3.46-2.11-1.65Z"/></svg>'}))</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{const l=document.createElement('link');l.rel='stylesheet';l.href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css';document.head.appendChild(l);document.querySelectorAll('.nav-footer button:first-child').forEach(b=>{const i=b.querySelector('svg');if(i)i.outerHTML='<i class="fa-solid fa-gears nav-icon" aria-hidden="true"></i>'})})</script>
+<style>
+.main{padding:18px 17px}
+.library{min-height:0;max-height:390px;overflow:hidden}
+.library-inner{height:310px;min-height:0;overflow:hidden}
+.sample-list{height:100%;max-height:none;min-height:0;overflow-y:auto}
+.foot{display:none}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const paths={
+    home:'<path d="m3 10 9-7 9 7M5 9v12h14V9M10 21v-7h4v7"/>',
+    chip:'<rect x="5" y="5" width="14" height="14" rx="1"/><path d="M9 9h6v6H9zM9 1v4m6-4v4M9 19v4m6-4v4M1 9h4m-4 6h4m14-6h4m-4 6h4"/>',
+    thermo:'<path d="M10 15V5a3 3 0 0 1 6 0v10a5 5 0 1 1-6 0zM13 10v9"/>',
+    chart:'<path d="M2 2v20h20M4 16c4-7 6-2 10-6s5-4 8-5"/>'
+  };
+  document.querySelectorAll('.sidebar .nav-btn[data-page]').forEach(btn=>{
+    const key={Home:'home',Microfluidics:'chip',Temperature:'thermo',Optics:'chart'}[btn.dataset.page];
+    const icon=btn.querySelector('.nav-icon');
+    if(icon&&paths[key])icon.innerHTML=paths[key];
+  });
+});
+</script>
+<style>
+.sequence-panel{padding-top:12px!important;padding-bottom:12px!important}
+.sequence-header{margin-bottom:8px!important}
+.steps-grid{row-gap:6px!important}
+.source{padding:12px 20px 10px!important}
+.source .panel-head{margin-bottom:10px!important}
+.top-grid{grid-template-rows:auto auto!important;gap:10px!important;align-items:stretch!important}
+.left-stack{display:contents!important}
+.source,.library,.carousel-panel{height:auto!important;min-height:0!important;align-self:stretch!important}
+.carousel-panel{grid-row:1 / span 2!important}
+.library{max-height:none!important;padding-bottom:12px!important;overflow:hidden!important}
+.library-inner{height:auto!important;max-height:none!important;min-height:0!important;overflow:hidden!important}
+.sample-list{height:auto!important;max-height:198px!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important}
+</style>
+<style>.app{grid-template-rows:60px minmax(0,1fr)!important}.system-badge{display:none!important}</style>
+<style>.main{padding:10px!important}.workspace{max-width:none!important;margin:0!important;gap:10px!important}.top-grid,.left-stack,.right-col{row-gap:10px!important}</style>
+<script>document.addEventListener('DOMContentLoaded',()=>{const syncCarouselHeight=()=>{const library=document.querySelector('.library'),carousel=document.querySelector('.carousel-panel');if(!library||!carousel)return;const h=library.getBoundingClientRect().bottom-carousel.getBoundingClientRect().top;carousel.style.height=`${Math.max(0,h)}px`};window.addEventListener('resize',syncCarouselHeight);new ResizeObserver(syncCarouselHeight).observe(document.querySelector('.library'));syncCarouselHeight()})</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{const syncCarouselHeightFinal=()=>{const library=document.querySelector('.library'),carousel=document.querySelector('.carousel-panel');if(!library||!carousel)return;carousel.style.alignSelf='start';carousel.style.height=`${Math.ceil(library.getBoundingClientRect().bottom-carousel.getBoundingClientRect().top)+2}px`};window.addEventListener('load',syncCarouselHeightFinal);window.addEventListener('resize',syncCarouselHeightFinal);requestAnimationFrame(()=>requestAnimationFrame(syncCarouselHeightFinal))})</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{const alignCarouselToLibrary=()=>{const l=document.querySelector('.library'),c=document.querySelector('.carousel-panel');if(!l||!c)return;c.style.height='auto';const target=l.getBoundingClientRect().bottom-c.getBoundingClientRect().top;c.style.height=`${Math.ceil(target)+10}px`};setTimeout(alignCarouselToLibrary,250);window.addEventListener('resize',()=>setTimeout(alignCarouselToLibrary,50))})</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{const alignTopPanels=()=>{const left=document.querySelector('.left-stack'),carousel=document.querySelector('.carousel-panel');if(!left||!carousel)return;carousel.style.height=`${Math.ceil(left.getBoundingClientRect().height)}px`;carousel.style.alignSelf='start'};setTimeout(alignTopPanels,300);window.addEventListener('resize',()=>setTimeout(alignTopPanels,50))})</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{Object.assign(COLORS,{yellow:'#e3ad17',pink:'#d94f8a',cyan:'#16a6b6',lime:'#78a832',brown:'#8b5e3c'});const select=document.getElementById('assignment-color');if(select){[['yellow','Yellow'],['pink','Pink'],['cyan','Cyan'],['lime','Lime'],['brown','Brown']].forEach(([value,label])=>{if(!select.querySelector(`option[value="${value}"]`)){const option=document.createElement('option');option.value=value;option.textContent=label;select.appendChild(option)}})}})</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{const button=document.querySelector('.nav-footer button:nth-child(2)');if(button){const icon=button.querySelector('svg');if(icon)icon.outerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.8 1.9c-.9.6-1.5 1-1.5 2.1M12 16.5h.01"/></svg>'}})</script>

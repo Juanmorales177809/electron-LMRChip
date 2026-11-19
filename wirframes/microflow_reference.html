@@ -59,5 +59,77 @@ function drawCharts(){document.querySelectorAll('canvas[data-chart]').forEach(c=
 </script>
 <style>.system-badge{background:#fff0f0;color:#b4232d}.system-badge .dot{background:#d9303e}</style>
 <svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"><symbol id="i-settings" viewBox="0 0 24 24"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="3.5"/></symbol><symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.8 1.9c-.9.6-1.5 1-1.5 2.1M12 16.5h.01"/></symbol></svg>
+<style>.app{grid-template-rows:60px minmax(0,1fr)!important}.system-badge{display:none!important}</style>
+<style>.main{padding:10px 10px!important}</style>
+<script>document.addEventListener('DOMContentLoaded',()=>{const steps=document.querySelector('#view-home .steps');if(steps&&steps.children.length<12){[['Step 6 · E2 PBS Wash','35 μL/min · 10 min'],['Step 7 · E5 Tris','35 μL/min · 10 min'],['Step 8 · E6 NPAu','7 μL/min · 15 min'],['Step 9 · E6 NPAu','7 μL/min · 30 min'],['Step 10 · E5 Tris','35 μL/min · 30 min'],['Step 11 · E2 PBS Wash','35 μL/min · 10 min'],['Step 12 · E4 PSA Sample','7 μL/min · 30 min']].forEach(([n,d])=>{const e=document.createElement('div');e.className='step';e.innerHTML=`<span class="step-dot"></span><div class="step-body"><strong>${n}</strong><p>${d}</p></div><span class="state">Pending</span>`;steps.appendChild(e)})}document.querySelectorAll('.nav-footer button:first-child').forEach(b=>{const i=b.querySelector('svg');if(i)i.outerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.65-.07-.98s-.02-.66-.07-.98l2.11-1.65-2-3.46-2.49 1a7.2 7.2 0 0 0-1.69-.98L15 3h-4l-.36 2.93c-.61.25-1.18.58-1.69.98l-2.49-1-2 3.46 2.11 1.65c-.04.32-.07.65-.07.98s.02.66-.07.98l-2.11 1.65 2 3.46 2.49-1c.51.4 1.08.73 1.69.98L11 21h4l.36-2.93c.61-.25 1.18-.58 1.69-.98l2.49 1 2-3.46-2.11-1.65Z"/></svg>'})})</script>
+<script>document.addEventListener('DOMContentLoaded',()=>{const l=document.createElement('link');l.rel='stylesheet';l.href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css';document.head.appendChild(l);document.querySelectorAll('.nav-footer button:first-child').forEach(b=>{const i=b.querySelector('svg');if(i)i.outerHTML='<i class="fa-solid fa-gears nav-icon" aria-hidden="true"></i>'})})</script>
+<style>
+/* Home: the left panels determine geometry; the sequence only fits their combined height. */
+#view-home .right-col > .sequence {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+}
+#view-home .right-col > .sequence .sequence-title { flex: 0 0 auto; }
+#view-home .right-col > .sequence .steps {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+</style>
+<script>
+/* Match the sequence to Progress + the gap + Sensorgram; never size the left column from the steps. */
+(() => {
+  const home = document.getElementById('view-home');
+  const left = home.querySelector('.left-col');
+  const progress = left.querySelector('.progress-panel');
+  const sensorgram = left.querySelector('.chart-panel');
+  const sequence = home.querySelector('.right-col > .sequence');
+  const sync = () => {
+    if (getComputedStyle(home.querySelector('.layout')).gridTemplateColumns.split(' ').length < 2) {
+      sequence.style.removeProperty('height');
+      return;
+    }
+    const top = progress.getBoundingClientRect().top;
+    const bottom = sensorgram.getBoundingClientRect().bottom;
+    sequence.style.height = `${Math.max(0, bottom - top)}px`;
+  };
+  const observer = new ResizeObserver(sync);
+  observer.observe(progress);
+  observer.observe(sensorgram);
+  window.addEventListener('resize', sync);
+  sync();
+})();
+</script>
+<script>
+/* Keep Temperature + controls aligned with the bottom of Spectrum without resizing left panels. */
+(() => {
+  const home = document.getElementById('view-home');
+  const layout = home.querySelector('.layout');
+  const spectrum = home.querySelector('.left-col > .chart-panel:last-child');
+  const temperature = home.querySelector('.right-col > .temp-panel');
+  const controls = home.querySelector('.right-col > .controls');
+  const sync = () => {
+    if (getComputedStyle(layout).gridTemplateColumns.split(' ').length < 2) {
+      temperature.style.removeProperty('height');
+      return;
+    }
+    const gap = parseFloat(getComputedStyle(temperature.parentElement).rowGap) || 0;
+    const available = spectrum.getBoundingClientRect().bottom - temperature.getBoundingClientRect().top;
+    const desired = available - gap - controls.getBoundingClientRect().height;
+    temperature.style.height = `${Math.max(0, desired)}px`;
+  };
+  const observer = new ResizeObserver(sync);
+  observer.observe(spectrum);
+  observer.observe(controls);
+  window.addEventListener('resize', sync);
+  sync();
+})();
+</script>
 </body>
 <style>.sidebar{display:flex;flex-direction:column}.nav-footer{margin-top:auto;padding-top:18px;border-top:1px solid var(--stroke);display:grid;gap:10px}.nav-footer .nav-btn{margin:0}</style><script>document.querySelectorAll('.sidebar').forEach(sidebar=>{const footer=document.createElement('div');footer.className='nav-footer';footer.innerHTML='<button class="nav-btn" type="button"><svg class="nav-icon"><use href="#i-settings"></use></svg><span class="nav-name">Settings</span></button><button class="nav-btn" type="button"><svg class="nav-icon"><use href="#i-help"></use></svg><span class="nav-name">Help</span></button>';sidebar.append(footer)});</script></html>
