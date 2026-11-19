@@ -45,6 +45,10 @@ body {
 }
 
 /* Temperature copy has no i-help symbol in its inline sprite. Keep Help visible. */
+.steps::before {
+  display: none !important;
+}
+
 .nav-footer button:nth-child(2) .nav-icon {
   display: none;
 }
@@ -186,7 +190,11 @@ body { font-size: var(--font-size-base); color: var(--shared-ink); }
 .side > .nav { margin: 0 0 10px; }
 .side > .nav:last-of-type { margin-bottom: 0; }
 
-.main { min-width: 0; color: var(--shared-ink); }
+.main {
+  min-width: 0;
+  color: var(--shared-ink);
+  margin-top: 10px !important;
+}
 .panel, .card {
   border-color: var(--shared-stroke);
   border-radius: var(--radius);
