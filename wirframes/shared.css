@@ -94,3 +94,126 @@ body {
   .header, header { min-height: 68px; }
   .app { grid-template-rows: 68px minmax(0, 1fr); }
 }
+
+/* Final shared normalization layer. Keep page-specific layout rules, but make
+   the shell, typography, navigation and common controls identical everywhere. */
+:root {
+  --background: var(--bg, #fafbfc);
+  --border: var(--shared-stroke);
+  --teal: var(--shared-accent);
+  --teal-dark: #007671;
+  --teal-soft: var(--shared-accent-tint);
+  --white: #fff;
+  --radius: 13px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body, button, input, select, textarea {
+  font-family: var(--font-family);
+}
+body { font-size: var(--font-size-base); color: var(--shared-ink); }
+
+.app { grid-template-rows: var(--header-height) minmax(0, 1fr) !important; }
+.header, header {
+  min-height: var(--header-height);
+  height: var(--header-height);
+  padding: 0 31px;
+  background: #fff;
+  border-bottom: 1px solid var(--shared-stroke);
+}
+.brand { font-size: 30px; font-weight: 750; letter-spacing: -1.4px; }
+.brand small { font-size: 18px; font-weight: 400; color: var(--secondary, #56647b); }
+.header-right { gap: 58px; }
+.ready, .system-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--green-bg, #e9f6eb);
+  color: #096c25;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 750;
+  padding: 10px 18px;
+}
+.window-icons, .windows { display: flex; align-items: center; gap: 27px; color: var(--shared-ink); }
+
+.shell, .body {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) !important;
+}
+.sidebar, .side {
+  width: var(--sidebar-width);
+  padding: 34px 16px;
+  background: #fff;
+  border-right: 1px solid var(--shared-stroke);
+}
+.nav { gap: 10px; }
+.nav-btn, .nav {
+  color: var(--shared-ink);
+  font-size: var(--font-size-nav);
+}
+.nav-btn, .body .nav {
+  min-height: 57px;
+  border-radius: 9px;
+  font-family: var(--font-family) !important;
+  font-size: var(--font-size-nav) !important;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+  gap: 17px !important;
+}
+.nav-btn { height: 57px; padding: 0 18px; gap: 17px; }
+.sidebar .nav-name, .side .nav span:not(.dot) {
+  font-family: var(--font-family) !important;
+  font-size: var(--font-size-nav) !important;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+.nav-btn.active, .nav.active {
+  background: var(--shared-accent-tint);
+  border-left: 4px solid var(--shared-accent);
+  padding-left: 14px;
+  font-weight: 700;
+}
+.nav-icon, .nav svg { width: 26px; height: 26px; }
+.nav-btn[data-page="Microfluidics"] .nav-icon,
+.nav-btn[data-view="microfluidics"] .nav-icon,
+.side > .nav[href*="microfluidics"] .nav-icon {
+  transform: scale(1.12);
+}
+.body .nav { display: flex; align-items: center; width: 100%; margin: 0; padding: 0 18px; text-decoration: none; }
+.side > .nav { margin: 0 0 10px; }
+.side > .nav:last-of-type { margin-bottom: 0; }
+
+.main { min-width: 0; color: var(--shared-ink); }
+.panel, .card {
+  border-color: var(--shared-stroke);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+.btn, .action, .outline, .calib-btn, .control {
+  font-family: var(--font-family);
+}
+input, select, textarea, .field {
+  border-color: var(--shared-stroke);
+  color: var(--shared-ink);
+}
+
+@media (max-width: 1190px) {
+  :root { --sidebar-width: var(--sidebar-width-tablet); }
+  .shell, .body { grid-template-columns: var(--sidebar-width) minmax(0, 1fr) !important; }
+  .sidebar, .side { width: var(--sidebar-width); }
+}
+@media (max-width: 860px) {
+  :root { --sidebar-width: var(--sidebar-width-mobile); }
+  .shell, .body { grid-template-columns: var(--sidebar-width) minmax(0, 1fr) !important; }
+  .sidebar, .side { width: var(--sidebar-width); padding: 20px 8px; }
+  .nav-btn, .body .nav { justify-content: center; padding-left: 0; padding-right: 0; }
+  .nav-name, .nav-btn .dot, .body .nav span:not(.dot) { display: none; }
+  .nav-btn.active, .nav.active { border-left: 0; border-bottom: 3px solid var(--shared-accent); padding-left: 0; }
+}
+@media (max-width: 620px) {
+  .header, header { height: 68px; min-height: 68px; padding: 0 12px; }
+  .app { grid-template-rows: 68px minmax(0, 1fr) !important; }
+}
